@@ -1,0 +1,90 @@
+{
+  "rabbit_version": "3.13.0",
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "email_outreach.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "email_outreach.dlx",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    { "name": "plan.requested", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "plan.requested.dlq" } },
+    { "name": "plan.ready", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "plan.ready.dlq" } },
+    { "name": "sourcing.requested", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "sourcing.requested.dlq" } },
+    { "name": "sourcing.completed", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "sourcing.completed.dlq" } },
+    { "name": "sourcing.partial", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "sourcing.partial.dlq" } },
+    { "name": "prospecting.completed", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "prospecting.completed.dlq" } },
+    { "name": "messaging.requested", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "messaging.requested.dlq" } },
+    { "name": "messaging.completed", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "messaging.completed.dlq" } },
+    { "name": "review.requested", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "review.requested.dlq" } },
+    { "name": "review.completed", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "review.completed.dlq" } },
+    { "name": "send.requested", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "send.requested.dlq" } },
+    { "name": "send.completed", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "send.completed.dlq" } },
+    { "name": "send.failed", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "send.failed.dlq" } },
+    { "name": "campaign.completed", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "email_outreach.dlx", "x-dead-letter-routing-key": "campaign.completed.dlq" } },
+
+    { "name": "plan.requested.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "plan.ready.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "sourcing.requested.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "sourcing.completed.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "sourcing.partial.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "prospecting.completed.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "messaging.requested.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "messaging.completed.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "review.requested.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "review.completed.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "send.requested.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "send.completed.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "send.failed.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "campaign.completed.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} }
+  ],
+  "bindings": [
+    { "source": "email_outreach.events", "vhost": "/", "destination": "plan.requested", "destination_type": "queue", "routing_key": "plan.requested", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "plan.ready", "destination_type": "queue", "routing_key": "plan.ready", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "sourcing.requested", "destination_type": "queue", "routing_key": "sourcing.requested", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "sourcing.completed", "destination_type": "queue", "routing_key": "sourcing.completed", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "sourcing.partial", "destination_type": "queue", "routing_key": "sourcing.partial", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "prospecting.completed", "destination_type": "queue", "routing_key": "prospecting.completed", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "messaging.requested", "destination_type": "queue", "routing_key": "messaging.requested", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "messaging.completed", "destination_type": "queue", "routing_key": "messaging.completed", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "review.requested", "destination_type": "queue", "routing_key": "review.requested", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "review.completed", "destination_type": "queue", "routing_key": "review.completed", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "send.requested", "destination_type": "queue", "routing_key": "send.requested", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "send.completed", "destination_type": "queue", "routing_key": "send.completed", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "send.failed", "destination_type": "queue", "routing_key": "send.failed", "arguments": {} },
+    { "source": "email_outreach.events", "vhost": "/", "destination": "campaign.completed", "destination_type": "queue", "routing_key": "campaign.completed", "arguments": {} },
+
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "plan.requested.dlq", "destination_type": "queue", "routing_key": "plan.requested.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "plan.ready.dlq", "destination_type": "queue", "routing_key": "plan.ready.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "sourcing.requested.dlq", "destination_type": "queue", "routing_key": "sourcing.requested.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "sourcing.completed.dlq", "destination_type": "queue", "routing_key": "sourcing.completed.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "sourcing.partial.dlq", "destination_type": "queue", "routing_key": "sourcing.partial.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "prospecting.completed.dlq", "destination_type": "queue", "routing_key": "prospecting.completed.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "messaging.requested.dlq", "destination_type": "queue", "routing_key": "messaging.requested.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "messaging.completed.dlq", "destination_type": "queue", "routing_key": "messaging.completed.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "review.requested.dlq", "destination_type": "queue", "routing_key": "review.requested.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "review.completed.dlq", "destination_type": "queue", "routing_key": "review.completed.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "send.requested.dlq", "destination_type": "queue", "routing_key": "send.requested.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "send.completed.dlq", "destination_type": "queue", "routing_key": "send.completed.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "send.failed.dlq", "destination_type": "queue", "routing_key": "send.failed.dlq", "arguments": {} },
+    { "source": "email_outreach.dlx", "vhost": "/", "destination": "campaign.completed.dlq", "destination_type": "queue", "routing_key": "campaign.completed.dlq", "arguments": {} }
+  ]
+}

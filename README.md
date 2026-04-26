@@ -138,6 +138,8 @@ There is **no user authentication**. The review UI is an open internal tool. All
 
 **Role:** Mines publicly available data to find matching companies and POCs. Implements the cache-first, layered scraping strategy.
 
+**Implementation spec:** [docs/data-sourcing-service.md](docs/data-sourcing-service.md) — attribute source map, company discovery vs enrichment, validation gates, crawl4ai + LLM extraction, storage provenance, and queue payloads.
+
 **Responsibilities:**
 - Consume `sourcing.requested` events.
 - For each target entity (company or person), execute the **Cache-First Decision** (see Data Pipeline section).
