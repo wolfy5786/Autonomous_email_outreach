@@ -1,6 +1,5 @@
 # Local RabbitMQ Infrastructure
 
-This folder provides a local RabbitMQ stack for development only.
 It creates durable queues and dead-letter queues (DLQs) aligned to the event names in `README.md`.
 
 ## What gets provisioned
@@ -16,12 +15,8 @@ It creates durable queues and dead-letter queues (DLQs) aligned to the event nam
   - `sourcing.partial`
   - `prospecting.completed`
   - `messaging.requested`
-  - `messaging.completed`
-  - `review.requested`
-  - `review.completed`
-  - `send.requested`
-  - `send.completed`
-  - `send.failed`
+  - `draft.written`
+  - `draft.failed`
   - `campaign.completed`
 
 ## Prerequisites
@@ -56,4 +51,4 @@ It creates durable queues and dead-letter queues (DLQs) aligned to the event nam
 - Local env settings for services should use:
   - `BROKER_TYPE=rabbitmq`
   - `RABBITMQ_URL=amqp://<user>:<password>@localhost:5672/<vhost>`
-- Production remains on SQS; this folder is local-only infrastructure.
+- Production uses RabbitMQ in-cluster or Amazon MQ for RabbitMQ; this folder is local-only infrastructure.
