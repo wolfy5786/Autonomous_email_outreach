@@ -1,0 +1,72 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: aeo-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  mongo:
+    image: mongo:7
+    container_name: aeo-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  planning:
+    build:
+      # Build context is the repo root so Dockerfile can COPY both
+      # src/planning/planning and src/local_infrastructure.
+      context: ../..
+      dockerfile: src/planning/Dockerfile
+    container_name: aeo-planning
+    environment:
+      BROKER_TYPE: rabbitmq
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBIT_PREFETCH: "10"
+      MONGO_URL: mongodb://mongo:27017
+      MONGO_DB: email_outreach
+      PLAN_REQUESTED_QUEUE: plan.requested
+      PLAN_READY_QUEUE: plan.ready
+      LLM_MODEL: ${LLM_MODEL:-gemini/gemini-1.5-pro}
+      LLM_TEMPERATURE: "0.2"
+      LLM_MAX_TOKENS: "4096"
+      LLM_TIMEOUT_SECONDS: "60"
+      LLM_MAX_RETRIES: "3"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HEALTH_PORT: "8080"
+      LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health').status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  rabbit-data:
+  mongo-data:
