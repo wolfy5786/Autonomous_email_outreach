@@ -73,4 +73,4 @@ These rules are **non-negotiable**. Follow them on every task, in every language
 
 - If a rule conflicts with a specific project decision, **defer to the project** and note the deviation in a comment.
 - If you are unsure whether a choice violates these rules, **ask before proceeding**.
-- Propose improvements to these rules via PR, not by silently ignoring them.
+- Propose improvements to these rules via PR, not by silently ignoring them.<!-- week1: project scaffold -->
