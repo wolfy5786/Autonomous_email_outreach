@@ -227,3 +227,4 @@ volumes:
   rabbitmq_data:
   mongo_data:
   postgres_data:
+# week1: rabbitmq factory
