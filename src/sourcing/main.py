@@ -1,30 +1,60 @@
-"""Entrypoint for the sourcing service skeleton."""
+"""
+Sourcing service: consumes `sourcing.requested` jobs from RabbitMQ (stub: log only).
+"""
 
-import asyncio
+from __future__ import annotations
 
-from .config import load_config
-from .logging_config import RequestContextAdapter, configure_logging
-from .messaging.broker_factory import create_broker
-from .pipeline import SourcingPipeline
-from .service import SourcingService
+import json
+import logging
+import signal
+import sys
+from typing import Any
+
+from messaging.broker_factory import create_broker
+from messaging.broker_interface import BrokerInterface
+
+QUEUE_SOURCING_REQUESTED = "sourcing.requested"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    stream=sys.stdout,
+)
+logger = logging.getLogger("sourcing")
 
 
-def build_service() -> SourcingService:
-    config = load_config()
-    root_logger = configure_logging(config.log_level)
-    logger = RequestContextAdapter(root_logger, {"request_id": "-", "campaign_id": "-"})
+def _handle_message(body: bytes) -> None:
+    """Stub processing: parse JSON if possible and log."""
+    try:
+        payload: Any = json.loads(body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        logger.warning("Received non-JSON message (logging raw): %r", body[:500])
+        return
 
-    logger.info("service=sourcing action=bootstrap status=starting")
-    broker = create_broker(config.broker_type, logger=logger)
-    pipeline = SourcingPipeline(logger=logger)
-    return SourcingService(config=config, broker=broker, pipeline=pipeline, logger=logger)
+    job_id = payload.get("job_id") if isinstance(payload, dict) else None
+    logger.info(
+        "Stub process sourcing job job_id=%s payload=%s",
+        job_id,
+        payload,
+    )
 
 
-async def run() -> None:
-    service = build_service()
-    await service.start()
+def main() -> None:
+    broker: BrokerInterface = create_broker()
+
+    def _shutdown(_signum: int, _frame: Any) -> None:
+        logger.info("Shutdown signal received; stopping consumer...")
+        broker.request_stop()
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    broker.connect()
+    try:
+        broker.subscribe(QUEUE_SOURCING_REQUESTED, _handle_message)
+    finally:
+        broker.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
-
+    main()

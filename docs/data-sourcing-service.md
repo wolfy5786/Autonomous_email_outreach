@@ -293,7 +293,22 @@ Compatible with `company_record` in [README.md](../README.md): core fields plus 
 
 Extend each stored attribute (core or `extra`) with optional **provenance** metadata. Two implementation options:
 
-**Option A — Sidecar map** (recommended for query clarity):
+**Option A — Sidecar map** (recommended for query clarity): a top-level map `provenance` whose keys are **attribute names** (core fields or keys under `extra`). Each value is an `AttributeProvenance` object with this shape (implemented in `src/shared/models/company.py` as Pydantic `AttributeProvenance`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_name` | `string` | e.g. `linkedin_api`, `serp`, `yc_directory`, `company_website` |
+| `source_type` | `enum` | `api` \| `serp` \| `scrape` \| `directory` \| `hint_feed` |
+| `observed_value` | `any \| null` | Raw value from the source before normalization |
+| `normalized_value` | `any \| null` | Value after normalization (what is stored in the field / `extra` key) |
+| `confidence` | `float` | 0.0–1.0 (e.g. from the attribute source map’s `confidence_weight`) |
+| `evidence_urls` | `string[]` | URLs where the value was observed |
+| `snippet` | `string \| null` | Text excerpt supporting the value |
+| `extracted_at` | ISO-8601 `datetime` | When this extraction was recorded |
+
+When two sources disagree on the same attribute, the higher-confidence value wins the primary field; the other may be kept under a distinct `extra` key (e.g. `industry__alt`) with its own provenance entry.
+
+**Example (abbreviated `company` document, Option A):**
 
 ```json
 {
@@ -314,11 +329,14 @@ Extend each stored attribute (core or `extra`) with optional **provenance** meta
       "normalized_value": "developer tools",
       "confidence": 0.9,
       "evidence_urls": [],
+      "snippet": null,
       "extracted_at": "2026-04-25T12:00:00Z"
     },
     "recent_news_summary": {
       "source_name": "serp",
       "source_type": "serp",
+      "observed_value": null,
+      "normalized_value": "Launched new analytics API in Q1.",
       "confidence": 0.55,
       "evidence_urls": ["https://example.com/press/2026-launch"],
       "snippet": "…",
@@ -334,6 +352,31 @@ Extend each stored attribute (core or `extra`) with optional **provenance** meta
 
 - Store **full markdown** only when needed for debugging (e.g. S3 object with TTL), or cap size in Mongo `extra.raw_markdown_preview` (first N chars).
 - Always store `content_hash` to detect page changes on re-scrape.
+
+### 9.3 Hints collection (`hints`)
+
+A **Hint** is a **personalization signal** tied to a `company_id` and `campaign_id`, produced during **discovery** or **enrichment**. It answers *why* a company might be interested in the product (funding, hiring, launch, content, etc.) and supplies evidence (`source_url`, `raw_snippet`) for downstream **Prospecting** (optional relevance ranking) and **Messaging** (LLM email drafts). It is not a substitute for the canonical `company_record`; it complements it.
+
+Collection: `hints`. See `src/shared/models/hint.py` (`Hint` / Beanie).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` (uuid) | Document id (Mongo `_id` when using string ids) |
+| `company_id` | `string` | Ref → `companies` / `CompanyRecord` |
+| `campaign_id` | `string` | Campaign this signal was collected for |
+| `category` | `enum` | `funding` \| `hiring` \| `product_launch` \| `tech_stack` \| `news` \| `partnership` \| `expansion` \| `content` \| `other` |
+| `summary` | `string` | Short, human-readable explanation of the signal (usable in LLM prompts) |
+| `source_name` | `string` | e.g. `serp`, `company_blog`, `hn_newest`, `yc_directory` |
+| `source_type` | `enum` | Same as provenance: `api` \| `serp` \| `scrape` \| `directory` \| `hint_feed` |
+| `source_url` | `string \| null` | Canonical URL where the signal was observed |
+| `raw_snippet` | `string \| null` | Supporting excerpt from the page/API |
+| `relevance_score` | `float \| null` | 0.0–1.0; optional, set by pipeline or Prospecting for “how relevant to this product” |
+| `discovered_at` | ISO-8601 `datetime` | When the hint was recorded |
+| `extra` | `object` | Arbitrary additional structured fields |
+
+**Indexes (recommended):** `company_id`, `campaign_id`, compound `(company_id, campaign_id)`, `category`.
+
+**Relationship:** `Hint.company_id` → `CompanyRecord.id` (many hints per company per campaign are normal).
 
 ---
 
@@ -375,5 +418,6 @@ Extend each stored attribute (core or `extra`) with optional **provenance** meta
 ## Document history
 
 - **v1** — Initial implementation-oriented Sourcing spec (attribute map, sources, pipeline, storage, queues).
+- **v2** — Section 9.1: formal `AttributeProvenance` field list; new §9.3 Hints collection and link to `src/shared` models.
 
 See also: [README.md](../README.md) (Sourcing Service, Data Pipeline, Data Schema, Message Queues), [Repository_structure.md](../Repository_structure.md).

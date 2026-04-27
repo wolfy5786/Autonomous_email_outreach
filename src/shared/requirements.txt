@@ -1,0 +1,5 @@
+# Shared MongoDB models (Beanie + Motor)
+beanie>=1.26,<2
+motor>=3.5,<4
+pymongo>=4.6,<5
+pydantic>=2.7,<3
