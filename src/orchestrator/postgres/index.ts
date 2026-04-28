@@ -1,2 +1,2 @@
 export { PostgresClient } from './client';
-export { CampaignStatusRepository, CampaignStatusRow } from './campaign-status.repo';
+export { CampaignStatusRepository } from './campaign-status.repo';
