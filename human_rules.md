@@ -7,3 +7,4 @@ One coherent task per session — avoid "do everything at once"
 Break large features into steps; chain sessions rather than one giant prompt
 
 Break large features into steps; chain sessions rather than one giant prompt<!-- week1: orchestrator routes -->
+<!-- week1: SMTP auth fix -->
