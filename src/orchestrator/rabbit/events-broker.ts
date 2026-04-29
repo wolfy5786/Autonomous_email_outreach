@@ -1,64 +1,60 @@
-import amqp from 'amqplib';
+import { Connection, Channel } from 'amqplib';
+import { createConnection, createChannel } from './connection';
 import { MessageBroker } from '../../local_infrastructure/rabbit_mq/broker.interface';
 
-const DEFAULT_EXCHANGE = 'email_outreach.events';
+const EXCHANGE = 'outreach.events';
+const EXCHANGE_TYPE = 'topic';
 
-/**
- * Publishes to the topic exchange with routing key = queue/event name (see definitions.json).
- * Consumes from pre-declared queues (topology loaded by RabbitMQ Docker definitions).
- */
 export class EventsBroker implements MessageBroker {
-  private connection: amqp.ChannelModel | null = null;
-  private publishChannel: amqp.Channel | null = null;
-  private consumeChannel: amqp.Channel | null = null;
+  private connection!: Connection;
+  private channel!: Channel;
 
-  constructor(
-    private readonly url: string,
-    private readonly exchangeName: string = process.env.RABBITMQ_EXCHANGE ?? DEFAULT_EXCHANGE
-  ) {}
+  constructor(private url: string) {}
 
-  private async getConnection(): Promise<amqp.ChannelModel> {
-    if (!this.connection) {
-      this.connection = await amqp.connect(this.url);
-    }
-    return this.connection;
+  async init(): Promise<void> {
+    this.connection = await createConnection(this.url);
+    this.channel = await createChannel(this.connection);
+    await this.channel.assertExchange(EXCHANGE, EXCHANGE_TYPE, { durable: true });
+    console.log(`[EventsBroker] Exchange '${EXCHANGE}' (${EXCHANGE_TYPE}) asserted`);
   }
 
-  async publish(topic: string, message: unknown): Promise<void> {
-    const conn = await this.getConnection();
-    if (!this.publishChannel) {
-      this.publishChannel = await conn.createChannel();
-      await this.publishChannel.assertExchange(this.exchangeName, 'topic', { durable: true });
-    }
-    const body = Buffer.from(JSON.stringify(message));
-    this.publishChannel.publish(this.exchangeName, topic, body, { persistent: true });
+  async publish(routingKey: string, payload: unknown): Promise<void> {
+    const message = Buffer.from(JSON.stringify({
+      eventType: routingKey,
+      payload,
+      timestamp: new Date().toISOString(),
+    }));
+
+    this.channel.publish(EXCHANGE, routingKey, message, {
+      persistent: true,
+      contentType: 'application/json',
+    });
+
+    console.log(`[EventsBroker] Published ${routingKey}`);
   }
 
-  async subscribe(queueName: string, handler: (msg: unknown) => Promise<void>): Promise<void> {
-    const conn = await this.getConnection();
-    if (!this.consumeChannel) {
-      this.consumeChannel = await conn.createChannel();
-      await this.consumeChannel.prefetch(1);
-    }
-    const ch = this.consumeChannel;
-    await ch.consume(queueName, async (msg) => {
+  async subscribe(routingKey: string, queue: string, handler: (msg: any) => Promise<void>): Promise<void> {
+    await this.channel.assertQueue(queue, { durable: true });
+    await this.channel.bindQueue(queue, EXCHANGE, routingKey);
+
+    this.channel.consume(queue, async (msg) => {
       if (!msg) return;
       try {
-        await handler(JSON.parse(msg.content.toString()));
-        ch.ack(msg);
-      } catch (err) {
-        console.error(`[EventsBroker] Error processing ${queueName}:`, err);
-        ch.nack(msg, false, true);
+        const parsed = JSON.parse(msg.content.toString());
+        await handler(parsed);
+        this.channel.ack(msg);
+      } catch (err: any) {
+        console.error(`[EventsBroker] Handler error on ${routingKey}:`, err.message);
+        this.channel.nack(msg, false, false);
       }
     });
+
+    console.log(`[EventsBroker] Subscribed to ${routingKey} via queue '${queue}'`);
   }
 
   async disconnect(): Promise<void> {
-    await this.publishChannel?.close();
-    await this.consumeChannel?.close();
-    this.publishChannel = null;
-    this.consumeChannel = null;
+    await this.channel?.close();
     await this.connection?.close();
-    this.connection = null;
+    console.log('[EventsBroker] Disconnected');
   }
 }
