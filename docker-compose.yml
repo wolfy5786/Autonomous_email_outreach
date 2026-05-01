@@ -229,3 +229,4 @@ volumes:
   postgres_data:
 # week1: rabbitmq factory
 # week1: CSV parser
+# week1: structured logging
