@@ -76,3 +76,4 @@ These rules are **non-negotiable**. Follow them on every task, in every language
 - Propose improvements to these rules via PR, not by silently ignoring them.<!-- week1: project scaffold -->
 <!-- week1: SMTP client -->
 <!-- week1: CSV parser tests -->
+<!-- week1: email module docs -->
