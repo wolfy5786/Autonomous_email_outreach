@@ -9,3 +9,4 @@ Break large features into steps; chain sessions rather than one giant prompt
 Break large features into steps; chain sessions rather than one giant prompt<!-- week1: orchestrator routes -->
 <!-- week1: SMTP auth fix -->
 <!-- week1: email sender refactor -->
+<!-- week2: rate limiter -->
