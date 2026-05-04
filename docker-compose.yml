@@ -230,3 +230,4 @@ volumes:
 # week1: rabbitmq factory
 # week1: CSV parser
 # week1: structured logging
+# week2: rate limiter tests
