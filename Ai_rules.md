@@ -77,3 +77,4 @@ These rules are **non-negotiable**. Follow them on every task, in every language
 <!-- week1: SMTP client -->
 <!-- week1: CSV parser tests -->
 <!-- week1: email module docs -->
+<!-- week2: lead scoring -->
