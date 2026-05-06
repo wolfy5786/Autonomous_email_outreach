@@ -231,3 +231,4 @@ volumes:
 # week1: CSV parser
 # week1: structured logging
 # week2: rate limiter tests
+# week2: OpenAI integration
