@@ -1,19 +1,11 @@
-services:
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: aeo-rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbit-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+# Top-level dev stack — pulls in the canonical RabbitMQ infra from rabbit_mq/
+# (declares topic exchange, DLX, and all pipeline queues via definitions.json),
+# then layers Mongo and the planning service on top.
 
+include:
+  - rabbit_mq/docker-compose.yml
+
+services:
   mongo:
     image: mongo:7
     container_name: aeo-mongo
@@ -37,7 +29,8 @@ services:
     container_name: aeo-planning
     environment:
       BROKER_TYPE: rabbitmq
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: email_outreach.events
       RABBIT_PREFETCH: "10"
       MONGO_URL: mongodb://mongo:27017
       MONGO_DB: email_outreach
@@ -68,5 +61,4 @@ services:
       start_period: 20s
 
 volumes:
-  rabbit-data:
   mongo-data:

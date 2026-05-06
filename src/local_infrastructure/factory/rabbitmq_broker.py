@@ -1,10 +1,16 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 import aio_pika
-from aio_pika.abc import AbstractRobustChannel, AbstractRobustConnection, AbstractRobustQueue
+from aio_pika.abc import (
+    AbstractExchange,
+    AbstractRobustChannel,
+    AbstractRobustConnection,
+    AbstractRobustQueue,
+)
 
 from local_infrastructure.factory.broker_interface import MessageBroker, MessageHandler, NonRetryableError
 
@@ -14,17 +20,27 @@ log = logging.getLogger(__name__)
 class RabbitMQBroker(MessageBroker):
     """aio-pika adapter.
 
-    Queues are durable; each topic X also declares a sibling DLQ X.dlq.
-    Messages are dead-lettered (never requeued) on parse errors, NonRetryableError,
-    and uncaught handler exceptions — we rely on tenacity inside handlers to cover
-    transient failures, so redelivery loops never form.
+    Topology is provisioned out-of-band via `rabbit_mq/definitions.json`:
+      - topic exchange `email_outreach.events` for pipeline events
+      - dead-letter exchange `email_outreach.dlx` for rejected messages
+      - one durable queue per event, each with a sibling `<topic>.dlq` queue
+        bound to the DLX with routing key `<topic>.dlq`
+
+    The adapter therefore does NOT declare queues or exchanges — it would risk
+    arg collisions with the pre-declared definitions. It publishes to the events
+    exchange and consumes from queues by name. Rejecting (`requeue=False`)
+    naturally routes a message through the DLX to its DLQ.
     """
 
-    def __init__(self, url: str, prefetch: int = 10) -> None:
+    EXCHANGE_NAME = "email_outreach.events"
+
+    def __init__(self, url: str, prefetch: int = 10, exchange_name: str | None = None) -> None:
         self._url = url
         self._prefetch = prefetch
+        self._exchange_name = exchange_name or os.getenv("RABBITMQ_EXCHANGE", self.EXCHANGE_NAME)
         self._conn: AbstractRobustConnection | None = None
         self._channel: AbstractRobustChannel | None = None
+        self._exchange: AbstractExchange | None = None
         self._consumer_tasks: list[asyncio.Task[None]] = []
 
     async def _get_channel(self) -> AbstractRobustChannel:
@@ -34,31 +50,23 @@ class RabbitMQBroker(MessageBroker):
             await self._channel.set_qos(prefetch_count=self._prefetch)
         return self._channel
 
-    async def _declare_queue(self, channel: AbstractRobustChannel, topic: str) -> AbstractRobustQueue:
-        dlq_name = f"{topic}.dlq"
-        # Sibling DLQ — durable, no dead-letter of its own.
-        await channel.declare_queue(dlq_name, durable=True)
-        return await channel.declare_queue(
-            topic,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": dlq_name,
-            },
-        )
+    async def _get_exchange(self) -> AbstractExchange:
+        if self._exchange is None:
+            channel = await self._get_channel()
+            self._exchange = await channel.get_exchange(self._exchange_name, ensure=True)
+        return self._exchange
 
     async def publish(self, topic: str, message: dict[str, Any]) -> None:
-        channel = await self._get_channel()
-        await self._declare_queue(channel, topic)
+        exchange = await self._get_exchange()
         body = json.dumps(message).encode("utf-8")
-        await channel.default_exchange.publish(
+        await exchange.publish(
             aio_pika.Message(body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT),
             routing_key=topic,
         )
 
     async def subscribe(self, topic: str, handler: MessageHandler) -> None:
         channel = await self._get_channel()
-        queue = await self._declare_queue(channel, topic)
+        queue = await channel.get_queue(topic, ensure=True)
         task = asyncio.create_task(self._consume(queue, handler), name=f"consume-{topic}")
         self._consumer_tasks.append(task)
 
@@ -97,3 +105,4 @@ class RabbitMQBroker(MessageBroker):
             await self._conn.close()
         self._channel = None
         self._conn = None
+        self._exchange = None
