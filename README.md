@@ -1,6 +1,6 @@
 # Autonomous Email Outreach System
 
-> A distributed, AI-powered outbound sales engine that mines public data, scores prospects, generates personalized messages, routes drafts through human review, and delivers approved emails — all orchestrated through asynchronous message queues with no user authentication required.
+> A distributed, AI-powered outbound sales engine that mines public data, scores prospects, generates personalized email drafts, and writes them directly to the user's email account — all orchestrated through asynchronous message queues and managed through a Web UI.
 
 ---
 
@@ -14,33 +14,32 @@
    - [Sourcing Service](#sourcing-service)
    - [Prospecting Service](#prospecting-service)
    - [Messaging Service](#messaging-service)
-   - [Review Service](#review-service)
-   - [Send Service](#send-service)
-4. [Data Pipeline](#data-pipeline)
+4. [Web UI (Frontend)](#web-ui-frontend)
+5. [Data Pipeline](#data-pipeline)
    - [Cache-First Strategy](#cache-first-strategy)
    - [Scraping Decision Tree](#scraping-decision-tree)
    - [Web Scraping Layers](#web-scraping-layers)
-5. [Data Sources](#data-sources)
-6. [Data Schema](#data-schema)
-7. [Message Queues](#message-queues)
-8. [API Endpoints](#api-endpoints)
-9. [NoSQL Storage Design](#nosql-storage-design)
-10. [Semantic Search on Unknown Columns](#semantic-search-on-unknown-columns)
-11. [System Flow — End to End](#system-flow--end-to-end)
+6. [Data Sources](#data-sources)
+7. [Data Schema](#data-schema)
+8. [Message Queues](#message-queues)
+9. [API Endpoints](#api-endpoints)
+10. [NoSQL Storage Design](#nosql-storage-design)
+11. [Semantic Search on Unknown Columns](#semantic-search-on-unknown-columns)
+12. [System Flow — End to End](#system-flow--end-to-end)
 
 ---
 
 ## System Overview
 
-The system automates the full outbound sales cycle:
+The system automates outbound sales prospecting up to the draft stage:
 
 1. **Mine** publicly available data to find companies and persons of contact (POC) matching an Ideal Customer Profile (ICP).
 2. **Score and rank** prospects against the ICP using a structured scoring model.
-3. **Generate** a personalized outbound message per prospect.
-4. **Route** drafts through a human review UI before sending.
-5. **Send** approved messages via a configurable email channel.
+3. **Generate** a personalized outbound email draft per prospect.
+4. **Write draft** to the user's email account (e.g., Gmail Drafts API) and save the record.
+5. **Mark complete** — the system's job ends at draft creation. The user reviews, edits, and sends from their own email client.
 
-There is **no user authentication**. The review UI is an open internal tool. All inter-service communication is handled exclusively through **message queues**.
+There is **no user authentication**. A **Web UI** provides a full dashboard for campaign management, prospect browsing, draft status tracking, and pipeline monitoring. All inter-service communication is handled exclusively through **message queues**.
 
 ---
 
@@ -50,8 +49,16 @@ There is **no user authentication**. The review UI is an open internal tool. All
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        DISTRIBUTED WEB ARCHITECTURE                         │
 │                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │                         WEB UI (SPA)                             │       │
+│  │  Campaign management · Prospect browsing · Draft status          │       │
+│  │  Pipeline monitoring · Notifications                             │       │
+│  └──────────────────────────────┬───────────────────────────────────┘       │
+│                                 │ HTTP /api/*                               │
+│                                 ▼                                           │
 │  ┌──────────────┐                                                           │
 │  │ Orchestrator │ ← Entry point. Coordinates the full pipeline.            │
+│  │              │   Serves all API endpoints consumed by Web UI.           │
 │  └──────┬───────┘                                                           │
 │         │ publishes to queues                                               │
 │         ▼                                                                   │
@@ -70,27 +77,23 @@ There is **no user authentication**. The review UI is an open internal tool. All
 │                   ┌──────────────────┐                                     │
 │                   │  Messaging Svc   │                                     │
 │                   │  Generate draft  │                                     │
-│                   │  per prospect    │                                     │
+│                   │  Write to user   │                                     │
+│                   │  email as draft  │                                     │
 │                   └────────┬─────────┘                                     │
 │                            │                                               │
 │                            ▼                                               │
 │                   ┌──────────────────┐                                     │
-│                   │   Review UI /    │                                     │
-│                   │  Review Service  │                                     │
-│                   │  Human approves  │                                     │
-│                   │  edits or rejects│                                     │
-│                   └────────┬─────────┘                                     │
-│                            │                                               │
-│                            ▼                                               │
-│                   ┌──────────────────┐                                     │
-│                   │   Send Service   │                                     │
-│                   │  Deliver via     │                                     │
-│                   │  email channel   │                                     │
+│                   │  Draft Written   │                                     │
+│                   │  Task complete.  │                                     │
+│                   │  User reviews &  │                                     │
+│                   │  sends from own  │                                     │
+│                   │  email client.   │                                     │
 │                   └──────────────────┘                                     │
 │                                                                             │
 │  ════════════════════════════════════════════════════                      │
 │  All services READ and WRITE to shared NoSQL store                         │
 │  All services communicate ONLY via message queues                          │
+│  Web UI talks only to the Orchestrator API (HTTP)                          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -138,6 +141,8 @@ There is **no user authentication**. The review UI is an open internal tool. All
 
 **Role:** Mines publicly available data to find matching companies and POCs. Implements the cache-first, layered scraping strategy.
 
+**Implementation spec:** [docs/data-sourcing-service.md](docs/data-sourcing-service.md) — attribute source map, company discovery vs enrichment, validation gates, crawl4ai + LLM extraction, storage provenance, and queue payloads.
+
 **Responsibilities:**
 - Consume `sourcing.requested` events.
 - For each target entity (company or person), execute the **Cache-First Decision** (see Data Pipeline section).
@@ -169,7 +174,7 @@ There is **no user authentication**. The review UI is an open internal tool. All
 
 ### Messaging Service
 
-**Role:** Generates a personalized outbound email draft for each approved prospect.
+**Role:** Generates a personalized outbound email draft for each ranked prospect, writes it as a draft in the user's email account, and marks the prospect task as completed.
 
 **Responsibilities:**
 - Consume `messaging.requested` events.
@@ -178,42 +183,32 @@ There is **no user authentication**. The review UI is an open internal tool. All
   - POC name, title, and company context.
   - Personalization hooks identified during sourcing (news, signals, stack, etc.).
   - Tone and angle guidance from the Plan Document.
-- Store the draft email in NoSQL linked to the prospect record.
-- Publish `review.requested` event.
+- **Write the generated email as a draft** in the user's email account via the configured email provider's draft API (e.g., Gmail `drafts.create`, Microsoft Graph `createDraft`).
+- Store the draft record in NoSQL linked to the prospect record with status `draft_created`.
+- Publish `draft.written` event.
+
+**Does not:** Send emails. The system's responsibility ends at draft creation. The user reviews, edits, and sends drafts from their own email client.
 
 ---
 
-### Review Service
+## Web UI (Frontend)
 
-**Role:** Hosts a human-facing review UI where operators can approve, edit, or reject draft emails before they are sent.
+**Role:** A static single-page application (SPA) that serves as the primary human interface for the entire system. It communicates exclusively with the Orchestrator's REST API.
 
-**Responsibilities:**
-- Serve the Review UI (no authentication required — internal tool).
-- Consume `review.requested` events to populate the review queue in the UI.
-- Support three actions per draft: **Approve**, **Edit + Approve**, **Reject**.
-- On approval: publish `send.requested` event.
-- On rejection: optionally publish `messaging.requested` event for regeneration with feedback.
-- Record review decisions and optional reviewer notes in NoSQL.
+**Capabilities:**
+- **Campaign Management** — Create, view, edit, pause, resume, and cancel outreach campaigns. Define ICP, product profile, and email account configuration.
+- **Pipeline Monitoring** — Real-time view of pipeline stage progress (planning → sourcing → prospecting → messaging → draft written). Queue depths, service health, and DLQ counts.
+- **Prospect Browsing** — View scored and ranked prospects per campaign. Inspect full company + POC records. Skip individual prospects.
+- **Draft Status Tracking** — View all generated drafts with their current status (`generating`, `draft_created`, `failed`). See which drafts have been written to the user's email account.
+- **Draft Notifications** — When a draft is written to the user's email, the UI displays a notification with the prospect context and a link/reference to the draft in their email client.
+- **Data Exploration** — Semantic search across company and POC records. Browse cached data, force re-scrape of stale records.
+- **Campaign Statistics** — Draft creation count, success rate, pipeline throughput per campaign.
 
-**UI features:**
-- List view of all pending drafts with prospect context.
-- Inline editing of subject line and body.
-- Bulk approve for batches of similar prospects.
-- Rejection with optional regeneration prompt.
-
----
-
-### Send Service
-
-**Role:** Delivers approved emails through a configurable email channel.
-
-**Responsibilities:**
-- Consume `send.requested` events.
-- Load the approved draft and prospect record.
-- Route through the configured email provider (SMTP, SendGrid, Postmark, AWS SES, etc.).
-- Record send status, message ID, and timestamp back to NoSQL.
-- Publish `send.completed` or `send.failed` events.
-- Implement rate limiting and send-window scheduling to respect provider limits and avoid spam flags.
+**Technical details:**
+- Static SPA served by a dedicated `web-ui` nginx pod.
+- All data fetched via REST calls to the Orchestrator at `/api/*`.
+- No authentication required (internal tool).
+- No server-side rendering — pure client-side React (or similar) build.
 
 ---
 
@@ -400,11 +395,11 @@ email_draft_record {
   body:                 string
   personalization_hooks: string[]
   generated_at:         ISO-8601 datetime
-  status:               enum [ pending_review, approved, edited_approved, rejected, sent, failed ]
-  reviewer_notes:       string | null
-  reviewed_at:          ISO-8601 datetime | null
-  sent_at:              ISO-8601 datetime | null
-  send_message_id:      string | null
+  status:               enum [ generating, draft_created, failed ]
+  email_draft_ref:      string | null          // provider draft ID (e.g., Gmail draft ID)
+  email_provider:       enum [ gmail, microsoft ] | null
+  error:                string | null          // populated on failure
+  retry_count:          integer
 }
 ```
 
@@ -417,14 +412,16 @@ campaign_record {
   icp:                  { ... ICP definition object ... }
   product_profile:      { ... product description object ... }
   plan_id:              string (ref → plan_record.id)
-  status:               enum [ draft, running, review, completed, paused ]
+  status:               enum [ draft, running, completed, paused ]
   created_at:           ISO-8601 datetime
   config: {
-    email_channel:      enum [ smtp, sendgrid, postmark, ses ]
-    email_channel_config: { ... provider-specific config ... }
+    email_account: {
+      provider:         enum [ gmail, microsoft ]
+      credentials_ref:  string                   // reference to stored OAuth token
+    }
     min_icp_score:      float
     freshness_days:     integer
-    send_window:        { start_hour: int, end_hour: int, timezone: string }
+    max_drafts:         integer                  // cap on drafts per campaign
   }
 }
 ```
@@ -453,6 +450,8 @@ plan_record {
 
 All inter-service communication is asynchronous via named message queues. Services never call each other directly.
 
+**Message broker:** The implementation uses **RabbitMQ** (durable queues, at-least-once delivery, dead-letter handling).  The logical queue names below map to RabbitMQ queues (and optional exchanges) in each environment. See [`cloud_INFRASTRUCTURE.md`](./cloud_INFRASTRUCTURE.md) for deployment and scaling details.
+
 ### Queue Definitions
 
 | Queue Name | Published By | Consumed By | Payload |
@@ -463,14 +462,12 @@ All inter-service communication is asynchronous via named message queues. Servic
 | `sourcing.completed` | Sourcing Service | Orchestrator, Prospecting Service | `{ campaign_id, entity_ids[] }` |
 | `sourcing.partial` | Sourcing Service | Orchestrator | `{ campaign_id, entity_id, missing_fields[] }` |
 | `prospecting.completed` | Prospecting Service | Orchestrator, Messaging Service | `{ campaign_id, ranked_prospects[] }` |
-| `messaging.requested` | Orchestrator / Review Service | Messaging Service | `{ campaign_id, poc_id, regeneration_prompt? }` |
-| `messaging.completed` | Messaging Service | Orchestrator | `{ campaign_id, draft_id }` |
-| `review.requested` | Messaging Service | Review Service | `{ draft_id }` |
-| `review.completed` | Review Service | Orchestrator | `{ draft_id, decision: approve/reject, notes? }` |
-| `send.requested` | Review Service | Send Service | `{ draft_id }` |
-| `send.completed` | Send Service | Orchestrator | `{ draft_id, message_id, sent_at }` |
-| `send.failed` | Send Service | Orchestrator | `{ draft_id, error, retry_count }` |
+| `messaging.requested` | Orchestrator | Messaging Service | `{ campaign_id, poc_id }` |
+| `draft.written` | Messaging Service | Orchestrator | `{ campaign_id, draft_id, poc_id, email_draft_ref }` |
+| `draft.failed` | Messaging Service | Orchestrator | `{ campaign_id, draft_id, poc_id, error, retry_count }` |
 | `campaign.completed` | Orchestrator | — (terminal event) | `{ campaign_id, stats }` |
+
+**Removed queues** (vs. earlier design iterations): `review.requested`, `review.completed`, `send.requested`, `send.completed`, `send.failed`, `messaging.completed`. The system no longer reviews or sends — it writes drafts and marks the task done.
 
 ### Queue Behaviors
 
@@ -483,30 +480,32 @@ All inter-service communication is asynchronous via named message queues. Servic
 
 ## API Endpoints
 
-All endpoints are HTTP/REST. No authentication is required. The Orchestrator Service owns the public API surface.
+All endpoints are HTTP/REST. No authentication is required. The Orchestrator Service owns the public API surface. The Web UI consumes these endpoints at `/api/*`.
 
 ### Campaign Management
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/campaigns` | Create and trigger a new outreach campaign |
-| `GET` | `/campaigns` | List all campaigns with status |
-| `GET` | `/campaigns/:id` | Get campaign details and pipeline status |
-| `PATCH` | `/campaigns/:id` | Update campaign config (pause, resume, update send window) |
-| `DELETE` | `/campaigns/:id` | Cancel and archive a campaign |
+| `POST` | `/api/campaigns` | Create and trigger a new outreach campaign |
+| `GET` | `/api/campaigns` | List all campaigns with status |
+| `GET` | `/api/campaigns/:id` | Get campaign details and pipeline status |
+| `PATCH` | `/api/campaigns/:id` | Update campaign config (pause, resume) |
+| `DELETE` | `/api/campaigns/:id` | Cancel and archive a campaign |
 
-**`POST /campaigns` request body:**
+**`POST /api/campaigns` request body:**
 ```
 {
   name: string,
   icp: { ... },
   product_profile: { ... },
   config: {
-    email_channel: "sendgrid" | "smtp" | "postmark" | "ses",
-    email_channel_config: { ... },
+    email_account: {
+      provider: "gmail" | "microsoft",
+      credentials_ref: string          // reference to stored OAuth token
+    },
     min_icp_score: float,
     freshness_days: integer,
-    send_window: { start_hour, end_hour, timezone }
+    max_drafts: integer                // cap on how many drafts to create per campaign
   }
 }
 ```
@@ -517,32 +516,21 @@ All endpoints are HTTP/REST. No authentication is required. The Orchestrator Ser
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/campaigns/:id/prospects` | List scored and ranked prospects for a campaign |
-| `GET` | `/prospects/:id` | Get full prospect record (company + POC + score) |
-| `PATCH` | `/prospects/:id/skip` | Mark a prospect as skipped (exclude from messaging) |
+| `GET` | `/api/campaigns/:id/prospects` | List scored and ranked prospects for a campaign |
+| `GET` | `/api/prospects/:id` | Get full prospect record (company + POC + score) |
+| `PATCH` | `/api/prospects/:id/skip` | Mark a prospect as skipped (exclude from messaging) |
 
 ---
 
-### Draft Email Management
+### Draft Management
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/campaigns/:id/drafts` | List all drafts for a campaign with status |
-| `GET` | `/drafts/:id` | Get a specific draft |
-| `PATCH` | `/drafts/:id` | Update draft subject or body (used by Review UI) |
-| `POST` | `/drafts/:id/approve` | Approve a draft → publishes `send.requested` |
-| `POST` | `/drafts/:id/reject` | Reject a draft with optional regeneration prompt |
-| `POST` | `/drafts/:id/regenerate` | Request a new draft for this prospect |
+| `GET` | `/api/campaigns/:id/drafts` | List all drafts for a campaign with status |
+| `GET` | `/api/drafts/:id` | Get a specific draft record |
+| `POST` | `/api/drafts/:id/regenerate` | Request a new draft for this prospect (re-run messaging) |
 
----
-
-### Review UI
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/review` | Serve the human review UI (HTML page) |
-| `GET` | `/review/queue` | Get all drafts pending review (JSON) |
-| `POST` | `/review/bulk-approve` | Approve a batch of draft IDs |
+Drafts are **read-only** from the system's perspective after creation. The user edits and sends drafts directly in their email client (Gmail, Outlook, etc.). The system does not approve, reject, or send.
 
 ---
 
@@ -550,20 +538,32 @@ All endpoints are HTTP/REST. No authentication is required. The Orchestrator Ser
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/companies/:id` | Get a company record from NoSQL |
-| `GET` | `/persons/:id` | Get a POC record from NoSQL |
-| `POST` | `/companies/:id/refresh` | Force re-scrape of a company regardless of cache |
-| `GET` | `/search` | Semantic search across NoSQL records (see below) |
+| `GET` | `/api/companies/:id` | Get a company record from NoSQL |
+| `GET` | `/api/persons/:id` | Get a POC record from NoSQL |
+| `POST` | `/api/companies/:id/refresh` | Force re-scrape of a company regardless of cache |
+| `GET` | `/api/search` | Semantic search across NoSQL records (see below) |
 
 ---
 
-### System Health
+### Pipeline & System Health
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Service liveness check |
-| `GET` | `/status` | Queue depths, service statuses, DLQ count |
-| `GET` | `/campaigns/:id/stats` | Sent count, approval rate, bounce rate per campaign |
+| `GET` | `/api/health` | Service liveness check |
+| `GET` | `/api/status` | Queue depths, service statuses, DLQ count |
+| `GET` | `/api/campaigns/:id/stats` | Draft count, success rate, pipeline throughput per campaign |
+| `GET` | `/api/campaigns/:id/pipeline` | Stage-by-stage progress for the campaign |
+
+---
+
+### Web UI Static Assets
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Serve the Web UI SPA (index.html + assets) |
+| `GET` | `/assets/*` | Static JS/CSS/image bundles |
+
+The Web UI is served by a dedicated `web-ui` nginx pod. All `/api/*` requests are routed to the Orchestrator via ingress rules.
 
 ---
 
@@ -580,12 +580,11 @@ All endpoints are HTTP/REST. No authentication is required. The Orchestrator Ser
 | `companies` | `company_id` | Company records with enforced + extra fields |
 | `persons` | `poc_id` | POC records with enforced + extra fields |
 | `email_drafts` | `draft_id` | Draft records with status lifecycle |
-| `send_log` | `send_id` | Immutable log of all send attempts |
 
 **Indexing strategy:**
 - `company_id`, `domain`, `campaign_ids` indexed on `companies`.
 - `poc_id`, `company_id`, `email` indexed on `persons`.
-- `campaign_id`, `status` indexed on `email_drafts` for Review UI queries.
+- `campaign_id`, `status` indexed on `email_drafts` for Web UI queries.
 - `freshness_timestamp` indexed on `companies` and `persons` for cache expiry checks.
 
 ---
@@ -621,7 +620,8 @@ When the Prospecting Service or any downstream service needs to query on a field
 ## System Flow — End to End
 
 ```
-1. Operator POSTs to /campaigns with ICP + product profile
+1. User opens the Web UI and creates a campaign
+   → POSTs to /api/campaigns with ICP, product profile, and email account config
         │
         ▼
 2. Orchestrator creates campaign record, publishes plan.requested
@@ -635,6 +635,7 @@ When the Prospecting Service or any downstream service needs to query on a field
         ▼
 4. Orchestrator receives plan.ready
    → Publishes sourcing.requested with target entity list
+   → Web UI shows pipeline progress (stage: sourcing)
         │
         ▼
 5. Sourcing Service consumes sourcing.requested
@@ -653,37 +654,36 @@ When the Prospecting Service or any downstream service needs to query on a field
    → Ranks prospects, filters below min_icp_score
    → Writes scores to NoSQL
    → Publishes prospecting.completed with ranked list
+   → Web UI shows pipeline progress (stage: prospecting)
         │
         ▼
 7. Orchestrator publishes messaging.requested for top N prospects
+   → Web UI shows pipeline progress (stage: messaging)
         │
         ▼
 8. Messaging Service consumes messaging.requested
    → Loads prospect record + Plan Document
    → Generates personalized email draft via LLM
-   → Stores draft in NoSQL (status: pending_review)
-   → Publishes review.requested
+   → Writes draft to user's email account via provider Draft API
+     (e.g., Gmail drafts.create, Microsoft Graph createDraft)
+   → Stores draft record in NoSQL (status: draft_created)
+   → Publishes draft.written
+   → On failure: publishes draft.failed (retries up to configured limit)
         │
         ▼
-9. Review Service populates review queue in UI
-   → Human operator reviews drafts in browser
-   → Approves / edits+approves / rejects
-   → On approve: publishes send.requested
-   → On reject: optionally publishes messaging.requested with feedback
+9. Orchestrator receives draft.written events
+   → Updates campaign progress
+   → Web UI displays notification: "Draft created for [POC name] at [Company]"
+   → User can find the draft in their email client, review, edit, and send manually
         │
         ▼
-10. Send Service consumes send.requested
-    → Loads approved draft and POC email
-    → Sends via configured email channel
-    → Records send status and message ID in NoSQL
-    → Publishes send.completed or send.failed
-        │
-        ▼
-11. Orchestrator aggregates send.completed events
-    → When all prospects processed: publishes campaign.completed
-    → Campaign stats available at /campaigns/:id/stats
+10. When all prospects are processed: Orchestrator publishes campaign.completed
+    → Campaign stats available at /api/campaigns/:id/stats
+    → Web UI shows campaign as completed with summary statistics
 ```
+
+**The system's responsibility ends at step 8.** Once a draft is written to the user's email account, the prospect task is marked complete. All further editing and sending is done by the user in their email client.
 
 ---
 
-*This document describes the full design of the Autonomous Email Outreach System. All inter-service communication is asynchronous. All mined data is cached in NoSQL with a cache-first lookup before any scraping is triggered. The semi-structured schema with semantic search on unknown columns ensures flexibility as scraped data varies across sources and targets.*
+*This document describes the full design of the Autonomous Email Outreach System. All inter-service communication is asynchronous. All mined data is cached in NoSQL with a cache-first lookup before any scraping is triggered. The semi-structured schema with semantic search on unknown columns ensures flexibility as scraped data varies across sources and targets. The system generates email drafts and places them in the user's email account — it never sends emails directly.*
