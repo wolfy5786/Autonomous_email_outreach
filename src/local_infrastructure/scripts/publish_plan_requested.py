@@ -25,24 +25,18 @@ async def main() -> int:
 
     body = json.dumps({"campaign_id": args.campaign_id}).encode("utf-8")
 
+    exchange_name = os.getenv("RABBITMQ_EXCHANGE", "email_outreach.events")
     conn = await aio_pika.connect_robust(args.url)
     async with conn:
         channel = await conn.channel()
-        # Declare with the same DLQ args the service uses so declarations match.
-        await channel.declare_queue(f"{args.queue}.dlq", durable=True)
-        await channel.declare_queue(
-            args.queue,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": f"{args.queue}.dlq",
-            },
-        )
-        await channel.default_exchange.publish(
+        # Topology (queues, DLX, bindings) is provisioned by definitions.json;
+        # we just publish to the events exchange with the topic as routing key.
+        exchange = await channel.get_exchange(exchange_name, ensure=True)
+        await exchange.publish(
             aio_pika.Message(body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT),
             routing_key=args.queue,
         )
-    print(f"published to {args.queue}: {body.decode()}")
+    print(f"published to {exchange_name} (rk={args.queue}): {body.decode()}")
     return 0
 
 
