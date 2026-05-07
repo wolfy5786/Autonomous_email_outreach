@@ -11,3 +11,4 @@ Break large features into steps; chain sessions rather than one giant prompt<!--
 <!-- week1: email sender refactor -->
 <!-- week2: rate limiter -->
 <!-- week2: retry logic -->
+<!-- week2: unsubscribe link -->
