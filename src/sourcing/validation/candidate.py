@@ -84,30 +84,24 @@ def validate_candidates(
         c["domain"] = domain
         sanitized.append(c)
 
-    tier_a_domains: set[str] = {c["domain"] for c in sanitized if _candidate_tier(c) == "A"}
-
-    by_domain: dict[str, dict[str, Any]] = {}
+    # Dedup *within* each tier; keep Tier A and Tier B as separate entries even when they
+    # share a domain — persist needs both: A → CompanyRecord, B → Hint on that company.
+    tier_a: dict[str, dict[str, Any]] = {}
+    tier_b: dict[str, dict[str, Any]] = {}
     for c in sanitized:
-        d = c["domain"]
-        existing = by_domain.get(d)
+        bucket = tier_a if _candidate_tier(c) == "A" else tier_b
+        existing = bucket.get(c["domain"])
         if existing is None:
-            by_domain[d] = c
-            continue
-        existing_tier = _candidate_tier(existing)
-        new_tier = _candidate_tier(c)
-        keep_existing = existing_tier == "A" or new_tier != "A"
-        loser = c if keep_existing else existing
-        winner = existing if keep_existing else c
-        winner.setdefault("_aliases", []).append(loser.get("_discovery_source"))
-        if not keep_existing:
-            by_domain[d] = winner
+            bucket[c["domain"]] = c
+        else:
+            existing.setdefault("_aliases", []).append(c.get("_discovery_source"))
 
-    accepted: list[dict[str, Any]] = []
-    for d, c in by_domain.items():
-        if _candidate_tier(c) == "B" and d not in tier_a_domains:
+    accepted: list[dict[str, Any]] = list(tier_a.values())
+    for d, c in tier_b.items():
+        if d in tier_a:
+            accepted.append(c)
+        else:
             rejected.append({**c, "_reject_reason": "tier_b_no_tier_a_match"})
-            continue
-        accepted.append(c)
 
     return accepted, rejected
 
