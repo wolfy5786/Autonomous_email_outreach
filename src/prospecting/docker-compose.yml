@@ -3,9 +3,9 @@ services:
     image: rabbitmq:3.13-management
     container_name: prospecting-rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-      RABBITMQ_DEFAULT_VHOST: /
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ../local_infrastructure/rabbit_mq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
@@ -31,15 +31,15 @@ services:
     image: prospecting-service:local
     container_name: prospecting-service
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
-      RABBITMQ_EXCHANGE: email_outreach.events
-      MONGODB_URI: mongodb://mongodb:27017
-      MONGODB_DB: email_outreach
-      WAIT_FOR_DEPS: "true"
-      STARTUP_RETRIES: "45"
-      STARTUP_SLEEP_SECONDS: "2"
-      HTTP_HOST: 0.0.0.0
-      HTTP_PORT: "8004"
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/%2F}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-email_outreach.events}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017}
+      MONGODB_DB: ${MONGODB_DB:-email_outreach}
+      WAIT_FOR_DEPS: ${WAIT_FOR_DEPS:-true}
+      STARTUP_RETRIES: ${STARTUP_RETRIES:-45}
+      STARTUP_SLEEP_SECONDS: ${STARTUP_SLEEP_SECONDS:-2}
+      HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
+      HTTP_PORT: ${HTTP_PORT:-8004}
     ports:
       - "8004:8004"
     depends_on:
@@ -57,11 +57,11 @@ services:
     image: prospecting-service:local
     container_name: prospecting-tests
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
-      RABBITMQ_EXCHANGE: email_outreach.events
-      MONGODB_URI: mongodb://mongodb:27017
-      MONGODB_DB: email_outreach
-      SERVICE_URL: http://prospecting:8004
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/%2F}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-email_outreach.events}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017}
+      MONGODB_DB: ${MONGODB_DB:-email_outreach}
+      SERVICE_URL: ${SERVICE_URL:-http://prospecting:8004}
     command: ["python", "tests/run_tests.py"]
     depends_on:
       rabbitmq:

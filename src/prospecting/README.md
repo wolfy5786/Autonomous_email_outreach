@@ -8,6 +8,14 @@ The service startup is fully containerized:
 - Defaults are applied in the Python startup module.
 - MongoDB and RabbitMQ connectivity checks run inside the container with retries.
 
+Before starting the stack, create your local `.env` from the tracked example file:
+
+```bash
+cp .env.example .env
+```
+
+Docker Compose reads `.env` from this directory automatically, so that file is the single place to adjust local runtime values.
+
 From this directory, build and start the service stack:
 
 ```bash
