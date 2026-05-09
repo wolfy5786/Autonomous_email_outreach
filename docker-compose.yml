@@ -1,0 +1,39 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: email-outreach-rabbitmq
+    hostname: rabbitmq
+    env_file:
+      - ./src/local_infrastructure/rabbit_mq/.env
+    ports:
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - ./src/local_infrastructure/rabbit_mq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./src/local_infrastructure/rabbit_mq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  sourcing:
+    build:
+      context: ./src
+      dockerfile: sourcing/Dockerfile
+    container_name: email-outreach-sourcing
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    env_file:
+      - ./src/sourcing/.env
+      - ./src/local_infrastructure/rabbit_mq/.env  # ← add this
+    environment:
+      BROKER_TYPE: rabbitmq
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:

@@ -1,5 +1,7 @@
 {
   "rabbit_version": "3.13.0",
+<<<<<<< HEAD
+=======
   "users": [
     {
       "name": "guest",
@@ -8,11 +10,14 @@
       "tags": "administrator"
     }
   ],
+>>>>>>> origin/planning-service
   "vhosts": [
     {
       "name": "/"
     }
   ],
+<<<<<<< HEAD
+=======
   "permissions": [
     {
       "user": "guest",
@@ -22,6 +27,7 @@
       "read": ".*"
     }
   ],
+>>>>>>> origin/planning-service
   "exchanges": [
     {
       "name": "email_outreach.events",
