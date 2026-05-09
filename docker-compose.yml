@@ -233,3 +233,4 @@ volumes:
 # week2: rate limiter tests
 # week2: OpenAI integration
 # week2: SMTP mock tests
+# week3: campaign scheduler
