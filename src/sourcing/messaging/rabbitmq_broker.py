@@ -14,6 +14,7 @@ from messaging.broker_interface import BrokerInterface, MessageCallback
 
 logger = logging.getLogger(__name__)
 
+# Used only when RABBITMQ_URL is unset or empty (e.g. quick local broker on localhost).
 DEFAULT_RABBITMQ_URL = "amqp://guest:guest@localhost:5672/%2F"
 DEFAULT_CONNECT_RETRIES = 30
 DEFAULT_CONNECT_BACKOFF_S = 2.0
@@ -23,7 +24,8 @@ class RabbitmqBroker(BrokerInterface):
     """Blocking pika client with manual consumer acks."""
 
     def __init__(self) -> None:
-        self._url: str = os.environ.get("RABBITMQ_URL", DEFAULT_RABBITMQ_URL)
+        raw = os.environ.get("RABBITMQ_URL", "").strip()
+        self._url: str = raw or DEFAULT_RABBITMQ_URL
         self._connection: Optional[BlockingConnection] = None
         self._channel: Optional[BlockingChannel] = None
 
