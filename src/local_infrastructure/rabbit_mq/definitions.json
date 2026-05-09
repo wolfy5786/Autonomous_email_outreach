@@ -1,5 +1,23 @@
 {
   "rabbit_version": "3.13.0",
+  "users": [
+    {
+      "name": "guest",
+      "password_hash": "QKsPX0PPe8vb5rQNeBolQLWUW4zrf55tYslZAuxGfILD9+OK",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"],
+      "limits": {}
+    }
+  ],
+  "permissions": [
+    {
+      "user": "guest",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
   "vhosts": [
     {
       "name": "/"
