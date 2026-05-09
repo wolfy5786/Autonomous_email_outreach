@@ -7,25 +7,25 @@ Comprehensive test suite for the Prospecting Service. These tests verify connect
 Run all tests at once:
 
 ```bash
-cd src/prospecting/tests
-./run_tests.sh
+cd src/prospecting
+docker compose run --rm tests
 ```
 
-Or run individual tests:
+Or run individual tests in the same container image:
 
 ```bash
-python3 test_connectivity.py      # Test MongoDB and RabbitMQ connectivity
-python3 test_integration.py       # Set up test data and verify workflows
-python3 test_message_flow.py      # Test queue publishing and consumption
-python3 test_api.py              # Test HTTP API endpoints
+docker compose run --rm tests python tests/test_connectivity.py
+docker compose run --rm tests python tests/test_integration.py
+docker compose run --rm tests python tests/test_message_flow.py
+docker compose run --rm tests python tests/test_api.py
 ```
 
 ## Prerequisites
 
-- The prospecting service must be running (see `../quickstart.sh`)
+- The prospecting stack must be running with Docker Compose
 - MongoDB must be accessible
 - RabbitMQ must be accessible
-- Virtual environment must be activated (automatically done by `run_tests.sh`)
+- No virtual environment setup is needed on the host
 
 ## Test Descriptions
 
@@ -79,7 +79,7 @@ python3 test_api.py              # Test HTTP API endpoints
 
 ---
 
-### `run_tests.sh`
+### `run_tests.py`
 **Purpose**: Master test runner that executes all tests in sequence.
 
 **Output**:
@@ -138,7 +138,7 @@ To add a new test:
 
 1. Create a new Python file in this directory: `test_custom.py`
 2. Follow the pattern of existing tests (import at top, test functions with Tuple[bool, str] return)
-3. Add the test to `run_tests.sh`:
+3. Add the test to `run_tests.py`:
 
 ```bash
 run_test "Custom Test Name" "$SCRIPT_DIR/test_custom.py"

@@ -9,8 +9,9 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app /app/app
+COPY tests /app/tests
 
 EXPOSE 8004
 
-CMD ["python", "-m", "app.main"]
+CMD ["python", "-m", "app.container_start"]
 

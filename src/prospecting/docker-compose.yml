@@ -1,0 +1,75 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: prospecting-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ../local_infrastructure/rabbit_mq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ../local_infrastructure/rabbit_mq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  mongodb:
+    image: mongo:7
+    container_name: prospecting-mongodb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  prospecting:
+    build:
+      context: .
+    image: prospecting-service:local
+    container_name: prospecting-service
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: email_outreach.events
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB: email_outreach
+      WAIT_FOR_DEPS: "true"
+      STARTUP_RETRIES: "45"
+      STARTUP_SLEEP_SECONDS: "2"
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "8004"
+    ports:
+      - "8004:8004"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  tests:
+    image: prospecting-service:local
+    container_name: prospecting-tests
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: email_outreach.events
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB: email_outreach
+      SERVICE_URL: http://prospecting:8004
+    command: ["python", "tests/run_tests.py"]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      prospecting:
+        condition: service_healthy
+
+volumes:
+  rabbitmq_data:

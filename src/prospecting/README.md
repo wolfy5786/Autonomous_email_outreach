@@ -2,32 +2,41 @@
 
 Consumes `sourcing.completed`, scores + ranks prospects vs the campaign Plan Document, persists scores to MongoDB, and publishes `prospecting.completed`.
 
-## Local run (with local RabbitMQ)
+## Usage
 
-1. Start RabbitMQ:
+The service startup is fully containerized:
+- Defaults are applied in the Python startup module.
+- MongoDB and RabbitMQ connectivity checks run inside the container with retries.
 
-```bash
-cd src/local_infrastructure/rabbit_mq
-cp .env.example .env
-docker compose up -d
-```
-
-2. Ensure MongoDB is reachable (you can use any MongoDB; local is fine).
-
-3. Run the service:
+From this directory, build and start the service stack:
 
 ```bash
-cd src/prospecting
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-export RABBITMQ_URL="amqp://guest:guest@localhost:5672/%2F"
-export RABBITMQ_EXCHANGE="email_outreach.events"
-export MONGODB_URI="mongodb://localhost:27017"
-export MONGODB_DB="email_outreach"
-
-python -m app.main
+docker compose up --build -d rabbitmq mongodb prospecting
 ```
+
+Check service health:
+
+```bash
+docker compose ps
+curl http://localhost:8004/health
+```
+
+Run the functional test suite in Docker:
+
+```bash
+docker compose run --rm tests
+```
+
+Stop everything:
+
+```bash
+docker compose down -v
+```
+
+Optional startup controls:
+- `WAIT_FOR_DEPS` (default: `true`) - set to `false` to skip dependency checks.
+- `STARTUP_RETRIES` (default: `45`) - dependency-check retries.
+- `STARTUP_SLEEP_SECONDS` (default: `2`) - delay between retries.
 
 ## Environment variables
 
