@@ -1,0 +1,64 @@
+# Top-level dev stack — pulls in the canonical RabbitMQ infra from rabbit_mq/
+# (declares topic exchange, DLX, and all pipeline queues via definitions.json),
+# then layers Mongo and the planning service on top.
+
+include:
+  - rabbit_mq/docker-compose.yml
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: aeo-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  planning:
+    build:
+      # Build context is the repo root so Dockerfile can COPY both
+      # src/planning/planning and src/local_infrastructure.
+      context: ../..
+      dockerfile: src/planning/Dockerfile
+    container_name: aeo-planning
+    environment:
+      BROKER_TYPE: rabbitmq
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: email_outreach.events
+      RABBIT_PREFETCH: "10"
+      MONGO_URL: mongodb://mongo:27017
+      MONGO_DB: email_outreach
+      PLAN_REQUESTED_QUEUE: plan.requested
+      PLAN_READY_QUEUE: plan.ready
+      LLM_MODEL: ${LLM_MODEL:-gemini/gemini-1.5-pro}
+      LLM_TEMPERATURE: "0.2"
+      LLM_MAX_TOKENS: "4096"
+      LLM_TIMEOUT_SECONDS: "60"
+      LLM_MAX_RETRIES: "3"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HEALTH_PORT: "8080"
+      LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health').status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mongo-data:
