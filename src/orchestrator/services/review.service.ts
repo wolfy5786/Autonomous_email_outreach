@@ -1,4 +1,4 @@
-import { EmailDraft, IEmailDraft } from '../models';
+import { EmailDraft, IEmailDraft } from '../../shared/models';
 import { MessageBroker } from '../../local_infrastructure/rabbit_mq/broker.interface';
 
 /**

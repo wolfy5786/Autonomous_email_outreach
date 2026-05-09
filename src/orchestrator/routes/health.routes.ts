@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { Campaign } from '../models';
+import { Campaign } from '../../shared/models';
 
 export function createHealthRouter(): Router {
   const router = Router();

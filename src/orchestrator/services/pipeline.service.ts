@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Campaign, ICampaign } from '../models';
+import { Campaign, ICampaign } from '../../shared/models';
 import { MessageBroker } from '../../local_infrastructure/rabbit_mq/broker.interface';
 import {
   CreateCampaignPayload,
@@ -13,7 +13,7 @@ import {
   SendFailedPayload,
   CampaignStats,
   PipelineStage,
-} from '../types';
+} from '../../shared/types';
 import { config } from '../config';
 
 /**

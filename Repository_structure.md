@@ -51,6 +51,10 @@ email_outreach/
 │   │   ├── factory/                        # Broker factory — abstracts broker via BROKER_TYPE env
 │   │   └── observability/                  # Local Prometheus + Grafana + RabbitMQ exporter configs
 │   │
+│   ├── shared/                             # Shared code used by all services
+│   │   ├── models/                         # Mongoose schemas (Campaign, EmailDraft)
+│   │   └── types/                          # TypeScript types, queue payloads, pipeline state
+│   │
 │   ├── orchestrator/                       # Entry point, pipeline coordinator, all API endpoints
 │   ├── planning/                           # ICP analysis → Plan Document (LLM)
 │   ├── sourcing/                           # Data mining — Layer 1 APIs + Layer 2 headless browsers

@@ -1,8 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PipelineService } from '../services/pipeline.service';
-import { Campaign } from '../models';
+import { Campaign } from '../../shared/models';
 import { AppError } from '../middleware/error-handler';
-import { CreateCampaignPayload } from '../types';
+import { CreateCampaignPayload } from '../../shared/types';
 
 export function createCampaignRouter(pipelineService: PipelineService): Router {
   const router = Router();
