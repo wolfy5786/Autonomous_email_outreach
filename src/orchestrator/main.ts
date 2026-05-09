@@ -3,6 +3,7 @@ import { config } from './config';
 import { createApp } from './app';
 import { EventsBroker } from './rabbit/events-broker';
 import { CampaignStatusRepository, PostgresClient } from './postgres';
+import { AuditLog } from './postgres/auditLog';
 
 async function main(): Promise<void> {
   // ── Connect to MongoDB ─────────────────────────────────────
@@ -10,17 +11,22 @@ async function main(): Promise<void> {
   await mongoose.connect(config.mongoUri);
   console.log('[main] MongoDB connected.');
 
-  // ── Connect to PostgreSQL (campaign status — §2.1) ─────────
+  // ── Connect to PostgreSQL ──────────────────────────────────
   console.log(`[main] Connecting to PostgreSQL at ${config.postgresUrl}…`);
   const pg = new PostgresClient(config.postgresUrl);
   await pg.connect();
+
   const statusRepo = new CampaignStatusRepository(pg);
   await statusRepo.ensureSchema();
-  console.log('[main] PostgreSQL connected; campaign_status schema ready.');
+
+  const auditLog = new AuditLog(pg);
+  await auditLog.ensureSchema();
+
+  console.log('[main] PostgreSQL connected; schemas ready.');
 
   // ── Create message broker ──────────────────────────────────
   const broker = new EventsBroker(config.rabbitmqUrl);
-  console.log('[main] EventsBroker (RabbitMQ topic exchange) ready.');
+  console.log('[main] EventsBroker ready.');
 
   // ── Build Express app ──────────────────────────────────────
   const { app, pipelineService } = createApp(broker, statusRepo);
@@ -31,19 +37,6 @@ async function main(): Promise<void> {
   // ── Start HTTP server ──────────────────────────────────────
   app.listen(config.port, () => {
     console.log(`[main] Orchestrator listening on :${config.port}`);
-    console.log(`[main] Endpoints (see design_docs/orchestrator_service_role.md section 3):`);
-    console.log(`       POST   /api/campaigns                 — Create campaign`);
-    console.log(`       GET    /api/campaigns                 — List campaigns`);
-    console.log(`       GET    /api/campaigns/:id            — Campaign details`);
-    console.log(`       PATCH  /api/campaigns/:id            — Pause/resume`);
-    console.log(`       DELETE /api/campaigns/:id            — Cancel campaign`);
-    console.log(`       GET    /api/campaigns/:id/stats      — Campaign stats`);
-    console.log(`       GET    /api/campaigns/:id/prospects — List prospects`);
-    console.log(`       GET    /api/campaigns/:id/drafts    — List drafts`);
-    console.log(`       GET    /api/prospects/:id           — Prospect detail (stub)`);
-    console.log(`       GET    /api/drafts/:id               — Draft by id`);
-    console.log(`       GET    /api/status                    — System status`);
-    console.log(`       GET    /health                        — Liveness`);
   });
 
   // ── Graceful shutdown ──────────────────────────────────────
