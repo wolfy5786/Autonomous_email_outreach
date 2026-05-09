@@ -1,33 +1,10 @@
 {
   "rabbit_version": "3.13.0",
-<<<<<<< HEAD
-=======
-  "users": [
-    {
-      "name": "guest",
-      "password_hash": "kI3GCrswBLNZQzHJJ95QLoyfAVooYhnvf7jbqiW9BjOYUloe",
-      "hashing_algorithm": "rabbit_password_hashing_sha256",
-      "tags": "administrator"
-    }
-  ],
->>>>>>> origin/planning-service
   "vhosts": [
     {
       "name": "/"
     }
   ],
-<<<<<<< HEAD
-=======
-  "permissions": [
-    {
-      "user": "guest",
-      "vhost": "/",
-      "configure": ".*",
-      "write": ".*",
-      "read": ".*"
-    }
-  ],
->>>>>>> origin/planning-service
   "exchanges": [
     {
       "name": "email_outreach.events",
