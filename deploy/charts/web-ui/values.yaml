@@ -1,0 +1,28 @@
+replicaCount: 2
+
+image:
+  repository: ""  # Set via CI: <account>.dkr.ecr.us-west-2.amazonaws.com/email-outreach/web-ui
+  tag: "nginx:alpine"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+scaler:
+  type: hpa       # hpa | keda
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPU: 70
+
+serviceAccount:
+  create: true
+  annotations: {}

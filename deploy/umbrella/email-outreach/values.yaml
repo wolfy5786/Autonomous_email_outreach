@@ -1,0 +1,6 @@
+# Override per-service values here for dev deployments
+# Example:
+# orchestrator:
+#   replicaCount: 1
+#   image:
+#     tag: "dev-latest"
