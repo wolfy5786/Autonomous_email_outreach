@@ -30,10 +30,10 @@ async def test_handler_happy_path(fake_repo, fake_broker, valid_llm_output_dict,
     assert "c1" in fake_repo.plans_by_campaign
     plan_id = fake_repo.plans_by_campaign["c1"]["id"]
     assert fake_repo.attached == [("c1", plan_id)]
-    assert len(fake_broker.published) == 1
-    topic, body = fake_broker.published[0]
-    assert topic == settings.plan_ready_queue
-    assert body == {"campaign_id": "c1", "plan_id": plan_id}
+    assert fake_broker.published == [
+        (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": plan_id}),
+        (settings.sourcing_requested_queue, {"campaign_id": "c1", "plan_id": plan_id}),
+    ]
 
 
 async def test_handler_idempotency_skips_llm_when_plan_exists(
@@ -54,7 +54,8 @@ async def test_handler_idempotency_skips_llm_when_plan_exists(
 
     assert llm_calls == []
     assert fake_broker.published == [
-        (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": "11111111-1111-1111-1111-111111111111"})
+        (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": "11111111-1111-1111-1111-111111111111"}),
+        (settings.sourcing_requested_queue, {"campaign_id": "c1", "plan_id": "11111111-1111-1111-1111-111111111111"}),
     ]
 
 
@@ -88,7 +89,8 @@ async def test_handler_duplicate_key_race_publishes_existing_id(
     # Whatever plan_id the fake repo synthesized during the race is what we publish.
     expected_id = fake_repo.plans_by_campaign["c1"]["id"]
     assert fake_broker.published == [
-        (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": expected_id})
+        (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": expected_id}),
+        (settings.sourcing_requested_queue, {"campaign_id": "c1", "plan_id": expected_id}),
     ]
     assert fake_repo.attached == [("c1", expected_id)]
 

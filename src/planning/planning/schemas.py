@@ -43,6 +43,12 @@ class PlanReadyEvent(BaseModel):
     plan_id: str
 
 
+class SourcingRequestedEvent(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    campaign_id: str
+    plan_id: str
+
+
 class CampaignRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # Queues
     plan_requested_queue: str = "plan.requested"
     plan_ready_queue: str = "plan.ready"
+    sourcing_requested_queue: str = "sourcing.requested"
 
     # LLM
     llm_model: str = "gemini/gemini-1.5-pro"

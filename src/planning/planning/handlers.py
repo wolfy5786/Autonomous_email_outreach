@@ -17,6 +17,7 @@ from .schemas import (
     PlanReadyEvent,
     PlanRecord,
     PlanRequestedEvent,
+    SourcingRequestedEvent,
 )
 
 log = structlog.get_logger(__name__)
@@ -56,6 +57,10 @@ async def handle_plan_requested(
             settings.plan_ready_queue,
             PlanReadyEvent(campaign_id=event.campaign_id, plan_id=existing).model_dump(),
         )
+        await broker.publish(
+            settings.sourcing_requested_queue,
+            SourcingRequestedEvent(campaign_id=event.campaign_id, plan_id=existing).model_dump(),
+        )
         return
 
     campaign = await repo.get_campaign(event.campaign_id)
@@ -93,7 +98,11 @@ async def handle_plan_requested(
         settings.plan_ready_queue,
         PlanReadyEvent(campaign_id=event.campaign_id, plan_id=plan_id_str).model_dump(),
     )
-    logger.info("plan.ready published", plan_id=plan_id_str)
+    await broker.publish(
+        settings.sourcing_requested_queue,
+        SourcingRequestedEvent(campaign_id=event.campaign_id, plan_id=plan_id_str).model_dump(),
+    )
+    logger.info("plan.ready and sourcing.requested published", plan_id=plan_id_str)
 
 
 def _suppress_unused_logger_warning() -> None:  # pragma: no cover
