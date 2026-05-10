@@ -121,12 +121,13 @@ class SourcingPipeline:
             )
             raise PlanNotFoundError(f"No PlanRecord for plan_id={job.plan_id!r}")
 
+        hints = (plan.outreach_context.personalization_hints if plan.outreach_context else None) or []
         logger.info(
-            "stage=plan_loaded plan_id=%s campaign_id=%s company_signals=%s personalization_hooks=%s",
+            "stage=plan_loaded plan_id=%s campaign_id=%s sources=%s personalization_hints=%s",
             plan.id,
             plan.campaign_id,
-            len(plan.company_signals),
-            len(plan.personalization_hooks),
+            len(plan.sources),
+            len(hints),
         )
 
         fresh_days = resolve_freshness_days(
