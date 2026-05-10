@@ -36,6 +36,22 @@ yc_news:
   company_stage   : list[str] — Funding stage filter
   regions         : list[str] — Geographic regions
 
+yc_directory:
+  status          : "Active" | "Inactive" | "Acquired"
+  batch_years     : list[str] — YC batch identifiers (e.g. "W24", "S23")
+  industries      : list[str] — Top-level vertical (e.g. "B2B", "Healthcare")
+  subindustries   : list[str] — Narrower vertical slice (e.g. "B2B → Sales")
+  tags            : list[str] — YC tag keywords (e.g. "AI", "Developer Tools")
+  regions         : list[str] — Geographic regions
+  is_hiring       : boolean   — only companies marked as hiring
+
+hacker_news:
+  query           : str       — free-text search across title / url / text
+  tags            : list[str] — story type, one or more of "show_hn", "launch_hn", "story", "ask_hn"
+  min_points      : integer >= 0
+  min_comments    : integer >= 0
+  created_after   : date (YYYY-MM-DD)
+
 ================
 GLOBAL FILTERS
 ================

@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from planning.schemas import (
     EmployeeCountRange,
     GlobalFilters,
+    HackerNewsSource,
     LLMPlanOutput,
     LLMUsage,
     OutreachContext,
@@ -15,6 +16,7 @@ from planning.schemas import (
     PlanRequestedEvent,
     ProductHuntSource,
     SourcingRequestedEvent,
+    YCDirectorySource,
     YCNewsSource,
 )
 
@@ -90,6 +92,58 @@ def test_oc_status_must_be_one_of_three_values() -> None:
     bad = {"sources": [{"source": "open_corporates", "filters": {"status": "pending"}}]}
     with pytest.raises(ValidationError):
         LLMPlanOutput.model_validate(bad)
+
+
+def test_yc_directory_status_must_be_one_of_three_values() -> None:
+    bad = {"sources": [{"source": "yc_directory", "filters": {"status": "Pending"}}]}
+    with pytest.raises(ValidationError):
+        LLMPlanOutput.model_validate(bad)
+
+
+def test_yc_directory_routes_to_correct_model() -> None:
+    plan = LLMPlanOutput.model_validate(
+        {
+            "sources": [
+                {
+                    "source": "yc_directory",
+                    "filters": {
+                        "status": "Active",
+                        "batch_years": ["W24"],
+                        "is_hiring": True,
+                    },
+                }
+            ]
+        }
+    )
+    src = plan.sources[0]
+    assert isinstance(src, YCDirectorySource)
+    assert src.filters.is_hiring is True
+
+
+def test_hacker_news_tags_restricted_to_known_values() -> None:
+    bad = {"sources": [{"source": "hacker_news", "filters": {"tags": ["job"]}}]}
+    with pytest.raises(ValidationError):
+        LLMPlanOutput.model_validate(bad)
+
+
+def test_hacker_news_routes_to_correct_model() -> None:
+    plan = LLMPlanOutput.model_validate(
+        {
+            "sources": [
+                {
+                    "source": "hacker_news",
+                    "filters": {
+                        "query": "AI agents",
+                        "tags": ["show_hn"],
+                        "min_points": 50,
+                    },
+                }
+            ]
+        }
+    )
+    src = plan.sources[0]
+    assert isinstance(src, HackerNewsSource)
+    assert src.filters.min_points == 50
 
 
 def test_oc_filters_route_to_open_corporates() -> None:

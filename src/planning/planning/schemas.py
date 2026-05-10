@@ -74,6 +74,30 @@ class YCNewsFilters(BaseModel):
     regions: list[str] | None = None
 
 
+class YCDirectoryFilters(BaseModel):
+    """Maps to the YC directory scraper at src/sourcing/discovery/yc_directory.py."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["Active", "Inactive", "Acquired"] | None = None
+    batch_years: list[str] | None = None
+    industries: list[str] | None = None
+    subindustries: list[str] | None = None
+    tags: list[str] | None = None
+    regions: list[str] | None = None
+    is_hiring: bool | None = None
+
+
+class HackerNewsFilters(BaseModel):
+    """Maps to the HN scraper at src/sourcing/discovery/hacker_news.py (Algolia search)."""
+
+    model_config = ConfigDict(extra="forbid")
+    query: str | None = None
+    tags: list[Literal["show_hn", "launch_hn", "story", "ask_hn"]] | None = None
+    min_points: int | None = Field(default=None, ge=0)
+    min_comments: int | None = Field(default=None, ge=0)
+    created_after: date | None = None
+
+
 # --- Source config wrappers (discriminated union by `source`) ---
 
 class ProductHuntSource(BaseModel):
@@ -97,8 +121,26 @@ class YCNewsSource(BaseModel):
     filters: YCNewsFilters = Field(default_factory=YCNewsFilters)
 
 
+class YCDirectorySource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["yc_directory"]
+    enabled: bool = True
+    filters: YCDirectoryFilters = Field(default_factory=YCDirectoryFilters)
+
+
+class HackerNewsSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["hacker_news"]
+    enabled: bool = True
+    filters: HackerNewsFilters = Field(default_factory=HackerNewsFilters)
+
+
 SourceConfig = Annotated[
-    ProductHuntSource | OpenCorporatesSource | YCNewsSource,
+    ProductHuntSource
+    | OpenCorporatesSource
+    | YCNewsSource
+    | YCDirectorySource
+    | HackerNewsSource,
     Field(discriminator="source"),
 ]
 
