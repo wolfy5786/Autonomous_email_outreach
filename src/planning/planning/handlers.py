@@ -11,7 +11,6 @@ from local_infrastructure.factory.broker_interface import MessageBroker, NonRetr
 
 from .config import settings
 from .schemas import (
-    KNOWN_SCORING_DIMENSIONS,
     LLMPlanOutput,
     LLMUsage,
     PlanReadyEvent,
@@ -23,12 +22,6 @@ from .schemas import (
 log = structlog.get_logger(__name__)
 
 LLMFn = Callable[[dict[str, Any], dict[str, Any]], Awaitable[tuple[LLMPlanOutput, LLMUsage]]]
-
-
-def _warn_unknown_dimensions(weights: dict[str, float]) -> None:
-    unknown = set(weights) - KNOWN_SCORING_DIMENSIONS
-    if unknown:
-        log.warning("plan uses non-standard scoring dimensions", dimensions=sorted(unknown))
 
 
 async def handle_plan_requested(
@@ -68,7 +61,6 @@ async def handle_plan_requested(
         raise NonRetryableError(f"campaign {event.campaign_id} not found")
 
     llm_out, usage = await llm_fn(campaign.icp, campaign.product_profile)
-    _warn_unknown_dimensions(llm_out.scoring_weights)
 
     plan = PlanRecord(
         id=uuid4(),

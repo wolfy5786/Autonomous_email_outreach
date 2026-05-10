@@ -37,7 +37,8 @@ async def test_generate_plan_happy_path(
 
     parsed, usage = await generate_plan(sample_icp, sample_product)
 
-    assert parsed.email_tone == "technical"
+    assert parsed.outreach_context is not None
+    assert parsed.outreach_context.tone == "technical"
     assert usage.total_tokens == 300
     assert mock.await_count == 1
     # The model string is passed through from settings.
@@ -49,9 +50,9 @@ async def test_generate_plan_happy_path(
 async def test_generate_plan_retries_on_invalid_json(
     monkeypatch: pytest.MonkeyPatch, valid_llm_output_dict: dict[str, Any], sample_icp, sample_product
 ) -> None:
-    # First call returns invalid (empty weights sum != 1), second returns valid.
+    # First call returns invalid (extra field rejected by extra="forbid"), second returns valid.
     bad = dict(valid_llm_output_dict)
-    bad["scoring_weights"] = {"industry_match": 0.1}
+    bad["unknown_top_level"] = "oops"
     sequence = [
         _fake_response(json.dumps(bad)),
         _fake_response(json.dumps(valid_llm_output_dict)),
@@ -65,14 +66,15 @@ async def test_generate_plan_retries_on_invalid_json(
     monkeypatch.setattr(llm_module.settings, "llm_max_retries", 3)
 
     parsed, _ = await generate_plan(sample_icp, sample_product)
-    assert parsed.email_tone == valid_llm_output_dict["email_tone"]
+    assert parsed.outreach_context is not None
+    assert parsed.outreach_context.tone == valid_llm_output_dict["outreach_context"]["tone"]
 
 
 async def test_generate_plan_exhausts_retries_on_persistent_bad_output(
     monkeypatch: pytest.MonkeyPatch, valid_llm_output_dict: dict[str, Any], sample_icp, sample_product
 ) -> None:
     bad = dict(valid_llm_output_dict)
-    bad["scoring_weights"] = {"industry_match": 0.1}  # never sums to 1
+    bad["unknown_top_level"] = "always_invalid"
 
     async def fake_acompletion(**_: Any) -> Any:
         return _fake_response(json.dumps(bad))
@@ -101,5 +103,6 @@ async def test_generate_plan_retries_on_rate_limit(
     monkeypatch.setattr(llm_module.settings, "llm_max_retries", 3)
 
     parsed, _ = await generate_plan(sample_icp, sample_product)
-    assert parsed.email_tone == "technical"
+    assert parsed.outreach_context is not None
+    assert parsed.outreach_context.tone == "technical"
     assert calls["n"] == 2

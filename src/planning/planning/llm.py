@@ -41,7 +41,6 @@ async def _single_call(messages: list[dict[str, str]]) -> tuple[str, LLMUsage]:
             "json_schema": {
                 "name": "plan",
                 "schema": LLMPlanOutput.model_json_schema(),
-                "strict": True,
             },
         },
         temperature=settings.llm_temperature,
@@ -58,6 +57,11 @@ async def generate_plan(
     icp: dict[str, Any], product_profile: dict[str, Any]
 ) -> tuple[LLMPlanOutput, LLMUsage]:
     """Call the configured LLM and return a validated LLMPlanOutput.
+
+    Per planning_service_role.md the LLM input is "the full ICP". We also pass
+    `product_profile` because outreach_context fields (campaign_goal, tone) need
+    product context to be grounded; ICP alone leaves the LLM under-specified.
+    Source/global filters are still derived from ICP only.
 
     Retry strategy:
       - Transient provider errors: exponential backoff, LLM_MAX_RETRIES attempts.
