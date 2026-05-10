@@ -18,12 +18,12 @@
 5. [Data Pipeline](#data-pipeline)
    - [Cache-First Strategy](#cache-first-strategy)
    - [Scraping Decision Tree](#scraping-decision-tree)
-   - [Web Scraping Layers](#web-scraping-layers)
+   - [Discovery & enrichment pipeline](#discovery--enrichment-pipeline)
 6. [Data Sources](#data-sources)
 7. [Data Schema](#data-schema)
 8. [Message Queues](#message-queues)
 9. [API Endpoints](#api-endpoints)
-10. [NoSQL Storage Design](#nosql-storage-design)
+10. [MongoDB storage design](#mongodb-storage-design)
 11. [Semantic Search on Unknown Columns](#semantic-search-on-unknown-columns)
 12. [System Flow — End to End](#system-flow--end-to-end)
 
@@ -66,9 +66,9 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 │  │   Planning   │   │   Sourcing   │   │ Prospecting  │                   │
 │  │   Service    │   │   Service    │   │   Service    │                   │
 │  │              │   │              │   │              │                   │
-│  │ Analyse ICP  │   │  Mine data   │   │  Score and   │                   │
-│  │ & product    │   │  Layer 1→2   │   │  rank POCs   │                   │
-│  │ Build plan   │   │  Cache-first │   │  vs ICP      │                   │
+│  │ Analyse ICP  │   │Discover/enrich │   │Apollo/Hunter │
+│  │ & product    │   │+ POC cues     │   │ enrich +    │
+│  │ Build plan   │   │per data map   │   │score vs ICP  │
 │  └──────┬───────┘   └──────┬───────┘   └──────┬───────┘                   │
 │         │                  │                   │                           │
 │         └──────────────────┴───────────────────┘                           │
@@ -91,7 +91,7 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 │                   └──────────────────┘                                     │
 │                                                                             │
 │  ════════════════════════════════════════════════════                      │
-│  All services READ and WRITE to shared NoSQL store                         │
+│  All services READ and WRITE to shared MongoDB                            │
 │  All services communicate ONLY via message queues                          │
 │  Web UI talks only to the Orchestrator API (HTTP)                          │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -119,19 +119,22 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 
 ### Planning Service
 
-**Role:** Analyzes the ICP and product profile to produce a structured **mining plan** — a set of key pointers used by all downstream services.
+**Role:** Analyzes the ICP and product profile to produce a structured **Plan Document** used by every downstream worker.
 
 **Responsibilities:**
 - Consume `plan.requested` events from the queue.
 - Use an LLM (or rule-based logic) to analyze the ICP and product profile.
 - Produce a **Plan Document** containing:
   - Key company attributes to look for during mining (industry, size, tech stack, funding stage, geography, etc.).
-  - Key person attributes for POC identification (title, seniority, department, LinkedIn signals, etc.).
+  - Key person attributes for POC identification (title, seniority, department, LinkedIn/page signals, etc.).
   - Scoring weights for each ICP dimension.
   - Personalization hooks to look for (recent news, product launches, job postings, blog posts, etc.).
-  - Email tone and angle guidance.
-- Persist the Plan Document to NoSQL.
+  - Email tone and angle guidance (and optional `outreach_context` per additive spec).
+  - Optional per-source **`search_blocks`**, **`global_filters`**, and related knobs for Sourcing (`planning_service_role.md`).
+- Persist the Plan Document to **MongoDB**.
 - Publish `plan.ready` event with the plan ID.
+
+**Canonical spec for additive sourcing configuration:** [`planning_service_role.md`](planning_service_role.md).
 
 **Key output:** A reusable Plan Document that anchors all downstream services to the same ICP interpretation.
 
@@ -139,36 +142,34 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 
 ### Sourcing Service
 
-**Role:** Mines publicly available data to find matching companies and POCs. Implements the cache-first, layered scraping strategy.
+**Role:** Runs **validated company discovery**, **deep enrichment**, and **POC identity resolution** exactly as enumerated in [`data_sourcing_map.md`](data_sourcing_map.md): Tier A directories, Tier B hint feeds, enrichment via owned web crawl + filings + anchored SERP, etc. Implements the cache-first workflows below.
 
-**Implementation spec:** [docs/data-sourcing-service.md](docs/data-sourcing-service.md) — attribute source map, company discovery vs enrichment, validation gates, crawl4ai + LLM extraction, storage provenance, and queue payloads.
+**Implementation spec:** [`docs/data-sourcing-service.md`](docs/data-sourcing-service.md) — attribute source map, discovery vs enrichment, validation gates, crawl4ai + LLM extraction, provenance/hints in MongoDB, queues.
 
 **Responsibilities:**
-- Consume `sourcing.requested` events.
-- For each target entity (company or person), execute the **Cache-First Decision** (see Data Pipeline section).
-- Coordinate multi-layer scraping when needed:
-  - **Layer 1:** Structured APIs (Apollo, Hunter, LinkedIn, GitHub).
-  - **Layer 2:** Headless browser scraping (crawl4ai, browser-use, Firecrawl).
-- Normalize and store raw mined data in NoSQL under a semi-structured schema.
-- Tag each record with a `freshness_timestamp` and `data_completeness_score`.
-- Publish `sourcing.completed` or `sourcing.partial` events.
+- Consume `sourcing.requested` events and merge any Plan-level `search_blocks` from [`planning_service_role.md`](planning_service_role.md).
+- Execute the **cache-first sourcing decision** per company/domain and per POC identity skeleton.
+- Run **Phase 1 discovery** and **Phase 2 enrichment** per `data_sourcing_map.md` (with crawl4ai / LLM extraction, allowed scrapers/APIs).
+- Identify **who** qualifies as a POC from public cues (sites, filings, announcements, NIH PIs, Product Hunt makers, etc.) — **without** invoking commercial email enrichment APIs here.
+- Normalize + persist **`company_record`**, POC documents, **`hints`**, provenance payloads in MongoDB; publish `sourcing.completed` / `sourcing.partial`.
 
-**Does not:** Score prospects. It only collects and stores data.
+**Does not:** Run Apollo/Hunter email waterfalls, compute ICP scores, or gate prospects for Messaging.
 
 ---
 
 ### Prospecting Service
 
-**Role:** Scores and ranks all sourced prospects against the ICP using the Plan Document's scoring weights.
+**Role:** Turns sourced companies + POC identities into ranked, email-ready prospects.
 
 **Responsibilities:**
 - Consume `sourcing.completed` events.
 - Load the Plan Document for the current campaign.
-- For each sourced company and POC, compute an **ICP fit score** across all defined dimensions.
-- Handle unknown or missing fields using semantic search against the NoSQL store.
-- Rank prospects and apply a minimum threshold filter.
-- Write scored and ranked records back to NoSQL.
-- Publish `prospecting.completed` events with a list of ranked prospect IDs.
+- **Acquire and verify commercial contact emails** (Apollo.io, Hunter.io, or equivalent APIs) wherever policy allows — this step sits **after** Sourcing identities exist.
+- For each POC/company pairing, compute an **ICP fit score** across the Plan weights; use semantic search on `extra` fields when schemas diverge (see [Semantic search](#semantic-search-on-unknown-columns)).
+- Rank prospects, apply minimum score thresholds.
+- Persist scores + email verification flags back to **MongoDB**; publish `prospecting.completed` with ranked prospect IDs.
+
+**Does not:** Own long-form company discovery/enrichment spiders (that's Sourcing) or orchestrate Messaging drafts.
 
 ---
 
@@ -184,7 +185,7 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
   - Personalization hooks identified during sourcing (news, signals, stack, etc.).
   - Tone and angle guidance from the Plan Document.
 - **Write the generated email as a draft** in the user's email account via the configured email provider's draft API (e.g., Gmail `drafts.create`, Microsoft Graph `createDraft`).
-- Store the draft record in NoSQL linked to the prospect record with status `draft_created`.
+- Store the draft record in **MongoDB** linked to the prospect record with status `draft_created`.
 - Publish `draft.written` event.
 
 **Does not:** Send emails. The system's responsibility ends at draft creation. The user reviews, edits, and sends drafts from their own email client.
@@ -214,120 +215,97 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 
 ## Data Pipeline
 
-### Cache-First Strategy
+### Cache-first strategy
 
-Before every data mining operation, the Sourcing Service checks the NoSQL store for existing data on the target entity. The outcome determines the scraping mode:
+Before running external calls, **Sourcing** checks MongoDB + supporting caches (`company_record`, linked POC identities, hint trails). Missing fields dictate how much of **`data_sourcing_map.md`** Phase 1/Phase 2 to re-run.
 
 | Condition | Mode | Action |
 |---|---|---|
-| No data exists | **Scrape All** | Full Layer 1 → Layer 2 scrape for the entity |
-| Partial data exists (missing fields or incomplete POC list) | **Scrape Partial** | Targeted scrape to fill specific gaps |
-| Sufficient data exists and is within the freshness window | **No Scrape** | Use cached data directly |
+| No usable document for entity | **Pull all sources** | Run relevant discovery **and** enrichment steps for company + POC cues |
+| Partial coverage (sparse company attrs or missing POC identity lines) | **Targeted refill** | Re-hit only failing attributes / sources respecting freshness TTLs |
+| Complete + fresh | **Cache hit** | Skip external mining; enqueue downstream enrichment for Prospecting if emails still absent |
 
-**Freshness window** is configurable per entity type (e.g., company data valid for 30 days, POC contact data valid for 14 days).
+**Freshness:** Configurable SLA windows (`freshness_days` on campaigns) differentiate long-lived structural facts vs fast-moving hires/news snippets.
 
-**Partial data scenarios:**
-- Some companies are sourced but POC contact data is missing.
-- A company record exists but specific fields required by the Plan Document are absent.
-- POC email is present but LinkedIn profile or role tenure is missing.
+**Split responsibilities:**
+- **Sourcing gaps** revolve around company truth + identifiable POC personas (titles, bios, canonical URLs).
+- **Prospecting** performs Apollo/Hunter passes when POC rows lack deliverable `@domain` inbox candidates.
 
 ---
 
-### Scraping Decision Tree
+### Scraping decision tree
 
 ```
-Sourcing Service receives target entity
+Sourcing receives seeded targets / domains
         │
         ▼
-Check NoSQL cache for entity
+Hydrate MongoDB snapshot for entity
         │
-   ┌────┴────────────────────────────────┐
-   │                                     │
-   ▼                                     ▼
-No data found                     Data found
-   │                                     │
-   ▼                            Check completeness
-SCRAPE ALL                       & freshness
-(Layer 1 → Layer 2)                      │
-                              ┌──────────┴──────────┐
-                              │                     │
-                              ▼                     ▼
-                      Sufficient &          Incomplete or
-                      fresh                 stale
-                              │                     │
-                              ▼                     ▼
-                        NO SCRAPE           SCRAPE PARTIAL
-                        use cache           (targeted gap fill)
-                                            Layer 1 → Layer 2
-                                            for missing fields
+   ┌────┴─────────────────────────────┐
+   │                                  │
+   ▼                                  ▼
+Cold record                      Warm snapshot
+   │                                  │
+   ▼                                  ▼
+Run discovery + enrichment        Evaluate completeness
+per data sourcing map tiers       vs freshness_budget
+                                              │
+                              ┌───────────────┴──────────────┐
+                              │                              │
+                              ▼                              ▼
+                         Satisfied                       Gaps detected
+                              │                              │
+                              ▼                              ▼
+                    Skip external mining          PATCH fields / rerun
+                    emit sourcing.completed           targeted sources
+                                                          emit sourcing.partial
 ```
 
 ---
 
-### Web Scraping Layers
+### Discovery & enrichment pipeline
 
-Data mining is executed in two layers. Layer 2 is only invoked when Layer 1 is insufficient.
+`data_sourcing_map.md` is authoritative; Sourcing mechanically mirrors its stages:
 
-```
-Target Entity
-      │
-      ▼
-Layer 1: Structured APIs
-  ├── Apollo.io         — company & contact database, email addresses
-  ├── Hunter.io         — email discovery and verification
-  ├── LinkedIn API      — role, seniority, company headcount, tenure
-  └── GitHub API        — tech stack signals, open-source activity
-      │
-      ├── [Sufficient data returned]
-      │         └──→ Extract → Normalize → Write to NoSQL cache → Done
-      │
-      └── [Gap detected — required fields still missing]
-                │
-                ▼
-         Layer 2: Headless Browser Scraping
-           ├── crawl4ai       — structured extraction from web pages
-           ├── browser-use    — agentic browser automation
-           └── Firecrawl      — crawl and extract from company websites, blogs, job boards
-                │
-                ├── [Sufficient data returned]
-                │         └──→ Extract → Normalize → Write to NoSQL cache → Done
-                │
-                └── [Still insufficient]
-                          └──→ Mark record as `data_incomplete`
-                               Flag for manual review or skip in ranking
-```
+**Phase 1 — discovery (validated company enumeration)**  
+Tier A directories (examples): Y Combinator roster, Product Hunt launches, NIH Reporter (healthcare spins), Open Corporates registry API (entity resolution and validation). Tier B *hints only* feed raw leads (HN Show HN/job threads, public LinkedIn company surfaces) → must pass deterministic validation gates before enrichment spend.
 
-**Scraping targets at Layer 2:**
-- Company website (About, Team, Product pages).
-- Company blog (recent posts for personalization hooks).
-- Job postings (signals for team growth, tech stack needs).
-- Press releases and news mentions.
-- Public LinkedIn profiles (where accessible without login).
-- Crunchbase and similar funding databases.
+**Phase 2 — enrichment (known domains only)**  
+- crawl4ai (or equivalents) → markdown → LLM JSON for corporate sites/blogs/`/careers` + ATS embeds  
+- Regulatory / reference signals (`SEC EDGAR Form D`, OpenCorporates)  
+- Anchored SERP/news pulls **after** canonical `(name,domain)`
+
+**Supporting automation:** Browser automation stacks (browser-use, Firecrawl, etc.) may accelerate targeted fetch workloads but stay within the crawl policy defined in [`docs/data-sourcing-service.md`](docs/data-sourcing-service.md).
+
+**Explicitly downstream from Sourcing:** Commercial email lookups (Apollo/Hunter) happen in Prospecting once personas exist.
 
 ---
 
 ## Data Sources
 
-| Source | Type | Layer | Data Provided |
+The table summarizes the same catalogue as **`data_sourcing_map.md`** (see that file for URLs, quotas, Tier A/Tier B rules, fallback chains):
+
+| Source | Phase | Typical use | Domain focus |
 |---|---|---|---|
-| Apollo.io | Structured API | 1 | Company info, contacts, emails, phone |
-| Hunter.io | Structured API | 1 | Email discovery, domain verification |
-| LinkedIn | Structured API | 1 | Role, seniority, headcount, tenure, connections |
-| GitHub | Structured API | 1 | Tech stack, open-source repos, engineering team size |
-| crawl4ai | Headless Browser | 2 | Structured extraction from any URL |
-| browser-use | Headless Browser | 2 | Agentic browsing, form-based pages |
-| Firecrawl | Headless Browser | 2 | Full-site crawl, markdown extraction |
-| Company websites | Headless Browser | 2 | About, Team, Product, Blog pages |
-| Job boards | Headless Browser | 2 | Open roles, tech stack signals |
-| Crunchbase | Headless Browser | 2 | Funding rounds, investors, growth stage |
-| News / PR sites | Headless Browser | 2 | Recent company news for personalization |
+| Y Combinator companies | Discovery / validation | Canonical startup domains + narratives | SW + HC |
+| Open Corporates | Discovery + validation / enrichment | Legal entity metadata, officers, jurisdiction, active status | SW + HC |
+| Product Hunt | Discovery | Recent launches & maker metadata | SW |
+| NIH Reporter | Discovery | NIH-funded institution spinouts | HC |
+| Hacker News (Algolia) | Hint feed | Announcements/job threads needing validation | SW |
+| LinkedIn (public listings) | Hint + enrichment | Employee bands, HQ clarity | SW + HC |
+| Company websites & blogs | Enrichment | Product story, personalization hooks | SW + HC |
+| Careers endpoints / ATS embeds | Enrichment | Hiring velocity, stack hints | SW + HC |
+| Targeted SERP | Enrichment only | Anchored funding/news arcs | SW + HC |
+| SEC EDGAR Form D | Enrichment | Regulatory funding disclosure | SW + HC |
+| Apollo.io / Hunter.io | Prospecting (post-sourcing) | Commercial email retrieval + verification | — |
+
+Operational limits (LinkedIn pacing, SerpAPI monthly caps, Crawl quotas) inherit from `data_sourcing_map.md` § *Pipeline Architecture Notes*.
 
 ---
 
 ## Data Schema
 
-Data is stored in a **semi-structured NoSQL schema**. A core set of fields is enforced as the known schema. Additional fields discovered during scraping are stored as-is and are queryable via semantic search on the column key.
+Data lives in MongoDB collections as **semi-structured documents** with enforced core paths plus permissive `extra` blobs discovered during sourcing. Semantic search overlays those dynamic keys (`extra`) as described later.
 
 ### Company Record
 
@@ -444,13 +422,15 @@ plan_record {
 }
 ```
 
+**Additive sourcing configuration:** the persisted document may extend this shape with **`search_blocks`**, **`global_filters`**, and **`outreach_context`** described in [`planning_service_role.md`](planning_service_role.md).
+
 ---
 
 ## Message Queues
 
 All inter-service communication is asynchronous via named message queues. Services never call each other directly.
 
-**Message broker:** The implementation uses **RabbitMQ** (durable queues, at-least-once delivery, dead-letter handling).  The logical queue names below map to RabbitMQ queues (and optional exchanges) in each environment. See [`cloud_INFRASTRUCTURE.md`](./cloud_INFRASTRUCTURE.md) for deployment and scaling details.
+**Message broker:** **RabbitMQ** everywhere — local Docker (`src/local_infrastructure/rabbit_mq/`), in-cluster on EKS, or Amazon MQ — with durable queues, at-least-once delivery, and dead-letter queues. Logical names below map directly to RabbitMQ queues/exchanges per environment ([`cloud_INFRASTRUCTURE.md`](./cloud_INFRASTRUCTURE.md)).
 
 ### Queue Definitions
 
@@ -538,10 +518,10 @@ Drafts are **read-only** from the system's perspective after creation. The user 
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/companies/:id` | Get a company record from NoSQL |
-| `GET` | `/api/persons/:id` | Get a POC record from NoSQL |
+| `GET` | `/api/companies/:id` | Get a company document from MongoDB |
+| `GET` | `/api/persons/:id` | Get a POC document from MongoDB |
 | `POST` | `/api/companies/:id/refresh` | Force re-scrape of a company regardless of cache |
-| `GET` | `/api/search` | Semantic search across NoSQL records (see below) |
+| `GET` | `/api/search` | Semantic search across MongoDB-backed records (see below) |
 
 ---
 
@@ -567,11 +547,11 @@ The Web UI is served by a dedicated `web-ui` nginx pod. All `/api/*` requests ar
 
 ---
 
-## NoSQL Storage Design
+## MongoDB storage design
 
-**Database type:** Document store (e.g., MongoDB, DynamoDB, Firestore, or CouchDB).
+**Database:** MongoDB (document store backing every service).
 
-**Collections / Tables:**
+**Collections:**
 
 | Collection | Primary Key | Notes |
 |---|---|---|
@@ -591,7 +571,9 @@ The Web UI is served by a dedicated `web-ui` nginx pod. All `/api/*` requests ar
 
 ## Semantic Search on Unknown Columns
 
-Because the schema is semi-structured, the `extra` field on company and POC records may contain arbitrary keys discovered during scraping (e.g., `annual_recurring_revenue`, `primary_use_case`, `last_funding_round_lead_investor`).
+Applies primarily to **`companies` and `persons` collections** in MongoDB.
+
+Because documents are semi-structured, the `extra` map on companies and POCs may expose arbitrary keys (e.g. `annual_recurring_revenue`, `primary_use_case`).
 
 When the Prospecting Service or any downstream service needs to query on a field that is not in the enforced schema, it uses **semantic search on the column key**:
 
@@ -629,8 +611,8 @@ When the Prospecting Service or any downstream service needs to query on a field
         ▼
 3. Planning Service consumes plan.requested
    → Analyses ICP and product profile
-   → Produces Plan Document (signals, weights, tone, hooks)
-   → Persists plan, publishes plan.ready
+   → Produces Plan Document (signals, weights, tone, hooks) plus additive sourcing blocks (`planning_service_role.md`)
+   → Persists plan in MongoDB, publishes plan.ready
         │
         ▼
 4. Orchestrator receives plan.ready
@@ -639,20 +621,19 @@ When the Prospecting Service or any downstream service needs to query on a field
         │
         ▼
 5. Sourcing Service consumes sourcing.requested
-   → For each target entity:
-       a. Check NoSQL cache
-       b. Decide: Scrape All / Scrape Partial / No Scrape
-       c. Execute Layer 1 APIs → if gap → Layer 2 headless browser
-       d. Normalize and write to NoSQL
+   → For each seed / resolved domain:
+       a. Hydrate MongoDB snapshots + hints cache
+       b. Decide Pull-all / targeted refill / cache hit via cache-first table
+       c. Phase 1 discovery + Tier B validation gates, then Phase 2 enrichment
+       d. Emit POC identities (no Apollo/Hunter yet); write companies + POC skeletons + hints to MongoDB
    → Publishes sourcing.completed
         │
         ▼
 6. Prospecting Service consumes sourcing.completed
    → Loads Plan Document
-   → Scores each company and POC against ICP weights
-   → Uses semantic search for unknown extra fields
-   → Ranks prospects, filters below min_icp_score
-   → Writes scores to NoSQL
+   → Apollo/Hunter/email APIs fill deliverable inbox candidates + verification flags
+   → Scores companies + POCs vs ICP weights; semantic search spans `extra` blobs
+   → Ranks prospects, filters below min_icp_score → MongoDB persists scores/email state
    → Publishes prospecting.completed with ranked list
    → Web UI shows pipeline progress (stage: prospecting)
         │
@@ -666,7 +647,7 @@ When the Prospecting Service or any downstream service needs to query on a field
    → Generates personalized email draft via LLM
    → Writes draft to user's email account via provider Draft API
      (e.g., Gmail drafts.create, Microsoft Graph createDraft)
-   → Stores draft record in NoSQL (status: draft_created)
+   → Stores draft record in MongoDB (status: draft_created)
    → Publishes draft.written
    → On failure: publishes draft.failed (retries up to configured limit)
         │
@@ -686,4 +667,4 @@ When the Prospecting Service or any downstream service needs to query on a field
 
 ---
 
-*This document describes the full design of the Autonomous Email Outreach System. All inter-service communication is asynchronous. All mined data is cached in NoSQL with a cache-first lookup before any scraping is triggered. The semi-structured schema with semantic search on unknown columns ensures flexibility as scraped data varies across sources and targets. The system generates email drafts and places them in the user's email account — it never sends emails directly.*
+*This document describes the full design of the Autonomous Email Outreach System. Services coordinate exclusively through RabbitMQ. MongoDB absorbs every authoritative document with cache-first sourcing passes before revisiting Tier A/B sources. Semantic search atop `extra` keys keeps ingestion flexible across heterogeneous providers. Messaging stops at drafts inside the customer's mailbox — outbound sending stays human-owned.*
