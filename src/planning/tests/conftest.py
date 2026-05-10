@@ -36,7 +36,7 @@ def valid_llm_output_dict() -> dict[str, Any]:
         "company_signals": [
             "HQ in US or EU, 50-500 employees on LinkedIn",
             "uses Kubernetes in production (k8s manifests in public GitHub repos)",
-            "Series A to Series B on Crunchbase within last 18 months",
+            "Series A to Series B (public press or SEC Form D) within last 18 months",
         ],
         "poc_signals": [
             "title contains 'VP Engineering' or 'Director of Platform'",

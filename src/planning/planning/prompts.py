@@ -6,7 +6,7 @@ Output rules — every field MUST be present:
 
 company_signals (3-20 items): observable attributes of a fit COMPANY.
   Be SPECIFIC and OBSERVABLE from public data (Apollo, Hunter, LinkedIn,
-  GitHub, company website, job boards, Crunchbase).
+  GitHub, company website, job boards, SEC filings, news).
   GOOD: "uses Kubernetes in production (k8s manifests in public GitHub repos)"
   GOOD: "HQ in US or EU, 50-500 employees on LinkedIn"
   BAD:  "has good engineering culture"

@@ -5,7 +5,6 @@ Software: YC → Product Hunt → HN. Healthcare: NIH → YC. Tier B sources las
 from __future__ import annotations
 
 from discovery.base import DiscoveryContext, DiscoveryResult, DiscoverySource
-from discovery.crunchbase import CrunchbaseDiscovery
 from discovery.hacker_news import HackerNewsDiscovery
 from discovery.linkedin_company import LinkedInCompanyDiscovery
 from discovery.nih_reporter import NIHReporterDiscovery
@@ -17,9 +16,7 @@ DISCOVERY_SOURCES: list[DiscoverySource] = [
     YCDirectoryDiscovery(),
     NIHReporterDiscovery(),
     ProductHuntDiscovery(),
-    CrunchbaseDiscovery(),
     OpenCorporatesDiscovery(),
-    GitHubTrendingDiscovery(),
     HackerNewsDiscovery(),
     LinkedInCompanyDiscovery(),
 ]
