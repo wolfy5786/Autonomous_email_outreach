@@ -20,9 +20,7 @@ logger = logging.getLogger("sourcing.discovery.product_hunt")
 DEFAULT_API_URL = "https://api.producthunt.com/v2/api/graphql"
 
 # postedAfter is optional: some schema revisions omit it — we retry without and use client-side lookback.
-GRAPHQL_DISCOVER_POSTS = """
-query DiscoverPosts($first: Int!, $after: String, $postedAfter: DateTime, $order: PostsOrder) {
-  posts(first: $first, after: $after, postedAfter: $postedAfter, order: $order) {
+_GRAPHQL_POST_SELECTION = """
     totalCount
     pageInfo {
       hasNextPage
@@ -56,49 +54,31 @@ query DiscoverPosts($first: Int!, $after: String, $postedAfter: DateTime, $order
         }
       }
     }
-  }
-}
 """
 
-GRAPHQL_DISCOVER_POSTS_NO_POSTED_AFTER = """
-query DiscoverPosts($first: Int!, $after: String, $order: PostsOrder) {
-  posts(first: $first, after: $after, order: $order) {
-    totalCount
-    pageInfo {
-      hasNextPage
-      endCursor
-    }
-    edges {
-      node {
-        id
-        name
-        slug
-        tagline
-        description
-        votesCount
-        createdAt
-        featuredAt
-        url
-        website
-        topics(first: 10) {
-          edges {
-            node {
-              id
-              name
-              slug
-            }
-          }
-        }
-        makers {
-          id
-          name
-          username
-        }
-      }
-    }
+GRAPHQL_DISCOVER_POSTS = (
+    """
+query DiscoverPosts($first: Int!, $after: String, $postedAfter: DateTime, $postedBefore: DateTime, $topic: String, $order: PostsOrder) {
+  posts(first: $first, after: $after, postedAfter: $postedAfter, postedBefore: $postedBefore, topic: $topic, order: $order) {
+"""
+    + _GRAPHQL_POST_SELECTION
+    + """
   }
 }
 """
+)
+
+GRAPHQL_DISCOVER_POSTS_NO_POSTED_AFTER = (
+    """
+query DiscoverPosts($first: Int!, $after: String, $postedBefore: DateTime, $topic: String, $order: PostsOrder) {
+  posts(first: $first, after: $after, postedBefore: $postedBefore, topic: $topic, order: $order) {
+"""
+    + _GRAPHQL_POST_SELECTION
+    + """
+  }
+}
+"""
+)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -138,6 +118,55 @@ def _env_str(name: str, default: str) -> str:
     if raw is None or not str(raw).strip():
         return default
     return str(raw).strip()
+
+
+def _env_optional_topic() -> str | None:
+    raw = (os.environ.get("PRODUCT_HUNT_TOPIC") or "").strip()
+    return raw or None
+
+
+def _datetime_to_ph_iso(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _resolve_posted_before_iso() -> str | None:
+    """
+    Upper bound for posts (GraphQL postedBefore). ISO env wins over *_DAYS when both set.
+    """
+    iso_raw = (os.environ.get("PRODUCT_HUNT_POSTED_BEFORE") or "").strip()
+    if iso_raw:
+        dt = _parse_iso(iso_raw)
+        if dt is None:
+            logger.warning(
+                "stage=ph_env_invalid name=PRODUCT_HUNT_POSTED_BEFORE raw=%r",
+                iso_raw,
+            )
+            return None
+        return _datetime_to_ph_iso(dt)
+
+    days_raw = (os.environ.get("PRODUCT_HUNT_POSTED_BEFORE_DAYS") or "").strip()
+    if not days_raw:
+        return None
+    try:
+        days = int(days_raw)
+    except ValueError:
+        logger.warning(
+            "stage=ph_env_invalid name=PRODUCT_HUNT_POSTED_BEFORE_DAYS raw=%r",
+            days_raw,
+        )
+        return None
+    if days < 1:
+        logger.warning(
+            "stage=ph_env_invalid name=PRODUCT_HUNT_POSTED_BEFORE_DAYS raw=%r using_default=unset min_allowed=1",
+            days_raw,
+        )
+        return None
+    boundary = datetime.now(timezone.utc) - timedelta(days=days)
+    return boundary.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _resolve_bearer_token() -> tuple[str | None, str | None]:
@@ -263,6 +292,7 @@ def _makers_list(node: dict[str, Any]) -> list[dict[str, Any]]:
 def _node_to_candidate(
     node: dict[str, Any],
     cutoff: datetime,
+    min_upvotes: int = 0,
 ) -> dict[str, Any] | None:
     node_id = node.get("id")
     slug = node.get("slug")
@@ -326,6 +356,16 @@ def _node_to_candidate(
         upvotes = int(votes) if votes is not None else 0
     except (TypeError, ValueError):
         upvotes = 0
+
+    if upvotes < min_upvotes:
+        logger.debug(
+            "stage=ph_candidate_skipped node_id=%s slug=%s reason=below_min_upvotes upvotes=%s min=%s",
+            node_id,
+            slug,
+            upvotes,
+            min_upvotes,
+        )
+        return None
 
     ph_url = node.get("url") if isinstance(node.get("url"), str) else None
 
@@ -487,18 +527,24 @@ class ProductHuntDiscovery(DiscoverySource):
         timeout_s = max(5.0, _env_float("PRODUCT_HUNT_REQUEST_TIMEOUT_S", 20.0))
         min_interval_s = max(0.0, _env_float("PRODUCT_HUNT_MIN_INTERVAL_S", 1.0))
         max_retries_429 = max(0, _env_int("PRODUCT_HUNT_MAX_RETRIES_429", 1))
+        min_upvotes = max(0, _env_int("PRODUCT_HUNT_MIN_UPVOTES", 0))
+        topic_slug = _env_optional_topic()
+        posted_before_iso = _resolve_posted_before_iso()
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
         posted_after_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         logger.info(
-            "stage=ph_start campaign_id=%s page_size=%s max_pages=%s lookback_days=%s order=%s posted_after=%s cutoff=%s",
+            "stage=ph_start campaign_id=%s page_size=%s max_pages=%s lookback_days=%s order=%s posted_after=%s posted_before=%s topic=%r min_upvotes=%s cutoff=%s",
             ctx.campaign_id,
             page_size,
             max_pages,
             lookback_days,
             order,
             posted_after_iso,
+            posted_before_iso,
+            topic_slug,
+            min_upvotes,
             cutoff.isoformat(),
         )
 
@@ -510,17 +556,18 @@ class ProductHuntDiscovery(DiscoverySource):
             for page in range(1, max_pages + 1):
                 await _throttle_between_pages(min_interval_s, last_mono)
 
-                variables_with: dict[str, Any] = {
+                variables_base: dict[str, Any] = {
                     "first": page_size,
                     "after": cursor,
+                    "postedBefore": posted_before_iso,
+                    "topic": topic_slug,
+                    "order": order,
+                }
+                variables_with = {
+                    **variables_base,
                     "postedAfter": posted_after_iso,
-                    "order": order,
                 }
-                variables_without: dict[str, Any] = {
-                    "first": page_size,
-                    "after": cursor,
-                    "order": order,
-                }
+                variables_without = dict(variables_base)
 
                 payload: dict[str, Any] | None = None
                 post_errs: list[str] = []
@@ -618,7 +665,7 @@ class ProductHuntDiscovery(DiscoverySource):
                     node = edge.get("node")
                     if not isinstance(node, dict):
                         continue
-                    cand = _node_to_candidate(node, cutoff)
+                    cand = _node_to_candidate(node, cutoff, min_upvotes)
                     if cand is not None:
                         candidates.append(cand)
                         page_added += 1
@@ -652,3 +699,72 @@ class ProductHuntDiscovery(DiscoverySource):
             candidates=candidates,
             errors=errors,
         )
+
+
+def main() -> None:
+    """
+    Smoke-test Product Hunt discovery against env-configured filters and tokens.
+
+    From repo ``src`` layout (matches sourcing Docker ``PYTHONPATH``)::
+
+        PYTHONPATH=../shared:. python -m discovery.product_hunt
+
+    Uses a stub ``plan`` object because ``PlanRecord`` is a Beanie document and
+    requires MongoDB initialization; ``ProductHuntDiscovery`` only reads ``campaign_id``.
+    """
+    import argparse
+    import sys
+    from types import SimpleNamespace
+    from typing import cast
+
+    parser = argparse.ArgumentParser(description="Run Product Hunt discovery once (uses env / tokens).")
+    parser.add_argument(
+        "--campaign-id",
+        default=os.environ.get("PRODUCT_HUNT_CLI_CAMPAIGN_ID", "cli-product-hunt"),
+        help="DiscoveryContext.campaign_id (default: env PRODUCT_HUNT_CLI_CAMPAIGN_ID or cli-product-hunt)",
+    )
+    parser.add_argument(
+        "--print-limit",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Max candidates to print as JSON (default: 20)",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Log warnings only",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.WARNING if args.quiet else logging.INFO,
+        format="%(levelname)s %(name)s %(message)s",
+    )
+
+    campaign_id = args.campaign_id.strip() or "cli-product-hunt"
+    ctx = DiscoveryContext(
+        campaign_id=campaign_id,
+        plan=cast(Any, SimpleNamespace()),
+    )
+
+    result = asyncio.run(ProductHuntDiscovery().discover(ctx))
+
+    sample = result.candidates[: max(0, args.print_limit)]
+    summary = {
+        "source_name": result.source_name,
+        "tier": result.tier,
+        "candidates_count": len(result.candidates),
+        "errors": result.errors,
+        "sample_candidates": sample,
+    }
+    print(json.dumps(summary, indent=2))
+
+    if any("no token" in e for e in result.errors):
+        sys.exit(2)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

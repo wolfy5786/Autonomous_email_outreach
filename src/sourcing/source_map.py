@@ -72,7 +72,7 @@ def _catalog() -> list[AttributeSourceMapRule]:
             allowed_for_enrichment=True,
             confidence_weight=0.95,
             priority=1,
-            fallback_sources=["product_hunt", "github_trending"],
+            fallback_sources=["product_hunt"],
             verticals=["SW", "HC"],
         ),
         AttributeSourceMapRule(
@@ -213,28 +213,6 @@ def _catalog() -> list[AttributeSourceMapRule]:
             priority=2,
             verticals=["HC"],
         ),
-        # --- GitHub trending / orgs ---
-        AttributeSourceMapRule(
-            attribute="tech_stack",
-            source_type=SourceType.API,
-            source_name="github_trending",
-            allowed_for_discovery=True,
-            allowed_for_enrichment=True,
-            confidence_weight=0.75,
-            priority=2,
-            fallback_sources=["company_website", "careers_page"],
-            verticals=["SW"],
-        ),
-        AttributeSourceMapRule(
-            attribute="github_org_url",
-            source_type=SourceType.API,
-            source_name="github_trending",
-            allowed_for_discovery=True,
-            allowed_for_enrichment=True,
-            confidence_weight=0.8,
-            priority=3,
-            verticals=["SW"],
-        ),
         # --- Hacker News (hint feed / Tier B) ---
         AttributeSourceMapRule(
             attribute="candidate_hint",
@@ -319,7 +297,7 @@ def _catalog() -> list[AttributeSourceMapRule]:
             allowed_for_enrichment=True,
             confidence_weight=0.78,
             priority=2,
-            fallback_sources=["github_trending", "careers_page"],
+            fallback_sources=["careers_page"],
             verticals=["SW", "HC"],
         ),
         AttributeSourceMapRule(

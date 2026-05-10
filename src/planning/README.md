@@ -24,4 +24,4 @@ uv sync --extra dev
 uv run pytest
 ```
 
-See [`/README.md`](../../README.md) for the full system design and [`/cloud_INFRASTRUCTURE.md`](../../cloud_INFRASTRUCTURE.md) for production deployment.
+See [`README.md`](../../README.md), [`planning_service_role.md`](../../planning_service_role.md), and [`data_sourcing_map.md`](../../data_sourcing_map.md) for how Plan Documents steer Sourcing versus Prospecting workloads.

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from discovery.base import DiscoveryContext, DiscoveryResult, DiscoverySource
 from discovery.crunchbase import CrunchbaseDiscovery
-from discovery.github_trending import GitHubTrendingDiscovery
 from discovery.hacker_news import HackerNewsDiscovery
 from discovery.linkedin_company import LinkedInCompanyDiscovery
 from discovery.nih_reporter import NIHReporterDiscovery
