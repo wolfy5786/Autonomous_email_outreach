@@ -40,7 +40,7 @@ def test_rabbitmq() -> Tuple[bool, str]:
         channel = connection.channel()
         
         # Verify exchange exists
-        channel.exchange_declare(exchange=exchange, exchange_type='fanout', passive=True)
+        channel.exchange_declare(exchange=exchange, exchange_type='topic', passive=True)
         
         connection.close()
         return True, "RabbitMQ connected successfully"

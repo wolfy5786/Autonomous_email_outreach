@@ -50,9 +50,20 @@ class Mongo:
     def persons(self) -> Collection:
         return self.db["persons"]
 
+    @property
+    def prospecting_runs(self) -> Collection:
+        return self.db["prospecting_runs"]
+
     def get_plan(self, plan_id: str | None, campaign_id: str) -> dict[str, Any] | None:
         if plan_id:
             return self.plans.find_one({"id": plan_id}) or self.plans.find_one({"_id": plan_id})
+        campaign = self.get_campaign(campaign_id)
+        campaign_plan_id = None
+        if campaign:
+            cfg = campaign.get("config") or {}
+            campaign_plan_id = cfg.get("plan_id") or campaign.get("plan_id")
+        if campaign_plan_id:
+            return self.plans.find_one({"id": campaign_plan_id}) or self.plans.find_one({"_id": campaign_plan_id})
         return self.plans.find_one({"campaign_id": campaign_id})
 
     def get_campaign(self, campaign_id: str) -> dict[str, Any] | None:
@@ -69,4 +80,33 @@ class Mongo:
         if not ids:
             return []
         return list(self.persons.find({"company_id": {"$in": ids}}))
+
+    def update_company_score(self, company_id: str, campaign_id: str, score: float) -> None:
+        field = f"campaign_scores.{campaign_id}.icp_fit_score"
+        self.companies.update_one(
+            {"$or": [{"id": company_id}, {"_id": company_id}]},
+            {"$set": {"icp_fit_score": score, field: score}},
+            upsert=False,
+        )
+
+    def update_person_score(self, person_id: str, campaign_id: str, score: float) -> None:
+        field = f"campaign_scores.{campaign_id}.icp_poc_score"
+        self.persons.update_one(
+            {"$or": [{"id": person_id}, {"_id": person_id}]},
+            {"$set": {"icp_poc_score": score, field: score}},
+            upsert=False,
+        )
+
+    def get_run_by_idempotency_key(self, idempotency_key: str) -> dict[str, Any] | None:
+        return self.prospecting_runs.find_one({"idempotency_key": idempotency_key})
+
+    def upsert_run(self, doc: dict[str, Any]) -> None:
+        created_at = doc.get("created_at")
+        payload = dict(doc)
+        payload.pop("created_at", None)
+        self.prospecting_runs.update_one(
+            {"idempotency_key": doc["idempotency_key"]},
+            {"$set": payload, "$setOnInsert": {"created_at": created_at}},
+            upsert=True,
+        )
 

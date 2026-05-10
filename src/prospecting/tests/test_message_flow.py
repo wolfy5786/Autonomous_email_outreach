@@ -35,32 +35,15 @@ def publish_sourcing_completed_event() -> Tuple[bool, str]:
         )
         channel.queue_bind(exchange=exchange, queue='sourcing.completed', routing_key='sourcing.completed')
         
-        # Create a test event
+        # Create a test event that matches the locked contract
         event_payload = {
+            "event_id": "evt-test-001",
+            "schema_version": 1,
             "campaign_id": "test-campaign-001",
-            "sourced_prospects": [
-                {
-                    "company_id": "company-001",
-                    "company_name": "TechCorp Inc",
-                    "person_id": "person-001",
-                    "person_name": "John Doe",
-                    "person_title": "CTO",
-                    "person_email": "john@techcorp.com",
-                    "source": "linkedin",
-                    "confidence_score": 0.85
-                },
-                {
-                    "company_id": "company-002",
-                    "company_name": "DataFlow Systems",
-                    "person_id": "person-002",
-                    "person_name": "Jane Smith",
-                    "person_title": "VP Engineering",
-                    "person_email": "jane@dataflow.com",
-                    "source": "apollo",
-                    "confidence_score": 0.92
-                }
-            ],
-            "timestamp": datetime.utcnow().isoformat()
+            "plan_id": "plan-test-campaign-001",
+            "trace_id": "trace-test-001",
+            "idempotency_key": "idemp-test-001",
+            "entity_ids": ["company-test-001", "company-test-002"]
         }
         
         # Publish the event
@@ -76,7 +59,7 @@ def publish_sourcing_completed_event() -> Tuple[bool, str]:
         
         connection.close()
         
-        return True, f"Published sourcing.completed event with {len(event_payload['sourced_prospects'])} prospects"
+        return True, f"Published sourcing.completed event with {len(event_payload['entity_ids'])} entities"
     except Exception as e:
         return False, f"Failed to publish event: {str(e)}"
 
@@ -136,7 +119,7 @@ def monitor_prospecting_completed_queue() -> Tuple[bool, str]:
                     data = json.loads(body)
                     print(f"    Message received:")
                     print(f"      Campaign ID: {data.get('campaign_id')}")
-                    print(f"      Prospects scored: {len(data.get('scored_prospects', []))}")
+                    print(f"      Prospects scored: {len(data.get('ranked_prospects', []))}")
                 except:
                     print(f"    Message received (raw): {body}")
                 

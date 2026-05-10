@@ -22,8 +22,10 @@ def setup_test_data() -> Tuple[bool, str]:
         campaign_data = {
             "_id": "test-campaign-001",
             "name": "Test Campaign",
+            "plan_id": "plan-test-campaign-001",
             "config": {
-                "min_icp_score": 0.7
+                "min_icp_score": 0.7,
+                "plan_id": "plan-test-campaign-001"
             },
             "status": "active"
         }

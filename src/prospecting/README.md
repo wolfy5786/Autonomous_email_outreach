@@ -2,6 +2,58 @@
 
 Consumes `sourcing.completed`, scores + ranks prospects vs the campaign Plan Document, persists scores to MongoDB, and publishes `prospecting.completed`.
 
+## Locked Service Contract
+
+This service currently enforces the following message and persistence contract:
+
+### `sourcing.completed` input
+
+```json
+{
+	"event_id": "string",
+	"schema_version": 1,
+	"campaign_id": "string",
+	"plan_id": "string | null",
+	"trace_id": "string",
+	"idempotency_key": "string",
+	"entity_ids": ["string"]
+}
+```
+
+### `prospecting.completed` output
+
+```json
+{
+	"event_id": "string",
+	"schema_version": 1,
+	"campaign_id": "string",
+	"plan_id": "string | null",
+	"trace_id": "string",
+	"idempotency_key": "string",
+	"ranked_prospects": [
+		{
+			"company_id": "string",
+			"poc_id": "string",
+			"score": 0.0
+		}
+	]
+}
+```
+
+### Required MongoDB collections
+
+- `campaigns`
+- `plans`
+- `companies`
+- `persons`
+- `prospecting_runs`
+
+### Persistence behavior
+
+- Company scores are persisted both globally (`icp_fit_score`) and per campaign under `campaign_scores.<campaign_id>.icp_fit_score`.
+- POC scores are persisted both globally (`icp_poc_score`) and per campaign under `campaign_scores.<campaign_id>.icp_poc_score`.
+- Each consumed event is tracked in `prospecting_runs` by `idempotency_key` so repeated messages do not reprocess the same run.
+
 ## Usage
 
 The service startup is fully containerized:
@@ -61,4 +113,5 @@ Optional startup controls:
 - `plans` (Plan Document; used for `scoring_weights`)
 - `companies` (company records; updated with `icp_fit_score`)
 - `persons` (POC records; updated with `icp_poc_score`)
+- `prospecting_runs` (idempotent run tracking and output event record)
 

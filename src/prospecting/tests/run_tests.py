@@ -6,6 +6,8 @@ from pathlib import Path
 
 
 TESTS: list[tuple[str, str]] = [
+    ("Schema Contract Tests", "test_contracts.py"),
+    ("Schema + Mongo Loading Test", "test_schema_loading.py"),
     ("Connectivity Tests", "test_connectivity.py"),
     ("Integration Tests", "test_integration.py"),
     ("Message Queue Flow Tests", "test_message_flow.py"),
