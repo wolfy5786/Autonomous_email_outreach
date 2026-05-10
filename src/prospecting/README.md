@@ -10,12 +10,7 @@ This service currently enforces the following message and persistence contract:
 
 ```json
 {
-	"event_id": "string",
-	"schema_version": 1,
 	"campaign_id": "string",
-	"plan_id": "string | null",
-	"trace_id": "string",
-	"idempotency_key": "string",
 	"entity_ids": ["string"]
 }
 ```
@@ -24,12 +19,7 @@ This service currently enforces the following message and persistence contract:
 
 ```json
 {
-	"event_id": "string",
-	"schema_version": 1,
 	"campaign_id": "string",
-	"plan_id": "string | null",
-	"trace_id": "string",
-	"idempotency_key": "string",
 	"ranked_prospects": [
 		{
 			"company_id": "string",
@@ -46,13 +36,12 @@ This service currently enforces the following message and persistence contract:
 - `plans`
 - `companies`
 - `persons`
-- `prospecting_runs`
 
 ### Persistence behavior
 
-- Company scores are persisted both globally (`icp_fit_score`) and per campaign under `campaign_scores.<campaign_id>.icp_fit_score`.
-- POC scores are persisted both globally (`icp_poc_score`) and per campaign under `campaign_scores.<campaign_id>.icp_poc_score`.
-- Each consumed event is tracked in `prospecting_runs` by `idempotency_key` so repeated messages do not reprocess the same run.
+- Company scores are persisted globally under `icp_fit_score`.
+- POC scores are persisted globally under `icp_poc_score`.
+- Verified POC emails are marked via `email_verified` when an email address is present.
 
 ## Usage
 
@@ -112,6 +101,5 @@ Optional startup controls:
 - `campaigns` (contains `config.min_icp_score`)
 - `plans` (Plan Document; used for `scoring_weights`)
 - `companies` (company records; updated with `icp_fit_score`)
-- `persons` (POC records; updated with `icp_poc_score`)
-- `prospecting_runs` (idempotent run tracking and output event record)
+- `persons` (POC records; updated with `icp_poc_score` and `email_verified`)
 

@@ -33,12 +33,7 @@ def test_sourcing_event_contract() -> Tuple[bool, str]:
     try:
         event = SourcingCompletedEvent.model_validate(
             {
-                "event_id": "evt-1",
-                "schema_version": 1,
                 "campaign_id": "campaign-1",
-                "plan_id": "plan-1",
-                "trace_id": "trace-1",
-                "idempotency_key": "idemp-1",
                 "entity_ids": ["company-1", "company-2"],
             }
         )
@@ -48,12 +43,7 @@ def test_sourcing_event_contract() -> Tuple[bool, str]:
         try:
             SourcingCompletedEvent.model_validate(
                 {
-                    "event_id": "evt-1",
-                    "schema_version": 1,
                     "campaign_id": "campaign-1",
-                    "plan_id": "plan-1",
-                    "trace_id": "trace-1",
-                    "idempotency_key": "idemp-1",
                     "entity_ids": ["company-1"],
                     "unexpected": True,
                 }
@@ -68,10 +58,17 @@ def test_sourcing_event_contract() -> Tuple[bool, str]:
 def test_mongo_documents_contract() -> Tuple[bool, str]:
     try:
         company = CompanyDocument.model_validate(
-            {"_id": "company-1", "name": "Acme", "employees": 42, "industry": "SaaS"}
+            {"_id": "company-1", "name": "Acme", "employees": 42, "industry": "SaaS", "icp_fit_score": 0.82}
         )
         person = PersonDocument.model_validate(
-            {"id": "person-1", "company_id": "company-1", "name": "Jane Doe", "title": "CEO"}
+            {
+                "id": "person-1",
+                "company_id": "company-1",
+                "name": "Jane Doe",
+                "title": "CEO",
+                "email_verified": True,
+                "icp_poc_score": 0.71,
+            }
         )
         plan = PlanDocument.model_validate(
             {"_id": "plan-1", "campaign_id": "campaign-1", "scoring_weights": {"industry": 0.7}}
@@ -79,8 +76,12 @@ def test_mongo_documents_contract() -> Tuple[bool, str]:
 
         if company.id != "company-1" or company.employee_count != 42:
             return _fail("company document normalization failed")
+        if company.icp_fit_score != 0.82:
+            return _fail("company score field normalization failed")
         if person.company_id != "company-1" or person.title != "CEO":
             return _fail("person document normalization failed")
+        if person.email_verified is not True or person.icp_poc_score != 0.71:
+            return _fail("person score / verification field normalization failed")
         if plan.id != "plan-1" or plan.scoring_weights.get("industry") != 0.7:
             return _fail("plan document normalization failed")
 
@@ -93,12 +94,7 @@ def test_output_contract() -> Tuple[bool, str]:
     try:
         payload = ProspectingCompletedEvent.model_validate(
             {
-                "event_id": "evt-2",
-                "schema_version": 1,
                 "campaign_id": "campaign-1",
-                "plan_id": "plan-1",
-                "trace_id": "trace-2",
-                "idempotency_key": "idemp-2",
                 "ranked_prospects": [
                     {"company_id": "company-1", "poc_id": "person-1", "score": 0.91},
                     RankedProspect(company_id="company-2", poc_id="person-2", score=0.75),

@@ -22,7 +22,6 @@ def _seed(db) -> None:
     db.plans.delete_many({})
     db.companies.delete_many({})
     db.persons.delete_many({})
-    db.prospecting_runs.delete_many({})
 
     db.campaigns.insert_one(
         {
@@ -55,6 +54,7 @@ def _seed(db) -> None:
             "company_id": "company-001",
             "name": "Jane Doe",
             "title": "CTO",
+            "email": "jane@example.com",
             "campaign_ids": ["campaign-001"],
         }
     )
@@ -75,12 +75,7 @@ def test_schema_and_loading() -> Tuple[bool, str]:
 
         sourcing_event = SourcingCompletedEvent.model_validate(
             {
-                "event_id": "evt-001",
-                "schema_version": 1,
                 "campaign_id": "campaign-001",
-                "plan_id": "plan-001",
-                "trace_id": "trace-001",
-                "idempotency_key": "idemp-001",
                 "entity_ids": ["company-001"],
             }
         )
@@ -93,16 +88,14 @@ def test_schema_and_loading() -> Tuple[bool, str]:
 
         company = db.companies.find_one({"_id": "company-001"}) or {}
         person = db.persons.find_one({"_id": "person-001"}) or {}
-        run = db.prospecting_runs.find_one({"idempotency_key": "idemp-001"}) or {}
+        if company.get("icp_fit_score") is None:
+            return False, "company score was not persisted"
+        if person.get("icp_poc_score") is None:
+            return False, "person score was not persisted"
+        if person.get("email_verified") is not True:
+            return False, "person email_verified flag was not updated"
 
-        if company.get("campaign_scores", {}).get("campaign-001", {}).get("icp_fit_score") is None:
-            return False, "campaign-scoped company score was not persisted"
-        if person.get("campaign_scores", {}).get("campaign-001", {}).get("icp_poc_score") is None:
-            return False, "campaign-scoped person score was not persisted"
-        if run.get("status") != "completed":
-            return False, "prospecting_runs record was not completed"
-
-        return True, "Schema validation, Mongo loading, and run persistence all succeeded"
+        return True, "Schema validation, Mongo loading, and score persistence all succeeded"
     except Exception as exc:
         return False, f"Schema/loading test failed: {exc}"
     finally:

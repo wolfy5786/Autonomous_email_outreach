@@ -37,12 +37,7 @@ def publish_sourcing_completed_event() -> Tuple[bool, str]:
         
         # Create a test event that matches the locked contract
         event_payload = {
-            "event_id": "evt-test-001",
-            "schema_version": 1,
             "campaign_id": "test-campaign-001",
-            "plan_id": "plan-test-campaign-001",
-            "trace_id": "trace-test-001",
-            "idempotency_key": "idemp-test-001",
             "entity_ids": ["company-test-001", "company-test-002"]
         }
         

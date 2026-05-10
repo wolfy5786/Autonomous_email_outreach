@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from .contracts import (
@@ -11,7 +10,6 @@ from .contracts import (
     PersonDocument,
     PlanDocument,
     ProspectingCompletedEvent,
-    ProspectingRunDocument,
     RankedProspect,
     SourcingCompletedEvent,
 )
@@ -36,30 +34,14 @@ class ProspectingWorker:
 
     def handle_sourcing_completed(self, msg: dict[str, Any]) -> dict[str, Any]:
         """
-        Input: { schema_version?, campaign_id, entity_ids[] }
-        Output: { schema_version?, campaign_id, ranked_prospects[] }
+        Input: { campaign_id, entity_ids[] }
+        Output: { campaign_id, ranked_prospects[] }
         """
         event = SourcingCompletedEvent.model_validate(msg)
-        existing_run = self._mongo.get_run_by_idempotency_key(event.idempotency_key)
-        if existing_run and existing_run.get("status") == "completed" and existing_run.get("output_event"):
-            return ProspectingCompletedEvent.model_validate(existing_run["output_event"]).model_dump(mode="json", exclude_none=True)
-
         campaign_id = event.campaign_id
         company_ids = [str(x) for x in event.entity_ids if x is not None]
 
-        run_base = ProspectingRunDocument(
-            event_id=event.event_id,
-            schema_version=event.schema_version,
-            campaign_id=campaign_id,
-            plan_id=event.plan_id,
-            trace_id=event.trace_id,
-            idempotency_key=event.idempotency_key,
-            status="processing",
-            entity_ids=company_ids,
-        )
-        self._mongo.upsert_run({**run_base.model_dump(mode="json", exclude_none=True), "created_at": datetime.now(timezone.utc).isoformat()})
-
-        plan_doc = self._mongo.get_plan(plan_id=event.plan_id, campaign_id=campaign_id)
+        plan_doc = self._mongo.get_plan(campaign_id=campaign_id)
         plan = PlanDocument.model_validate(plan_doc).model_dump(mode="python") if plan_doc else None
         if not plan:
             raise RuntimeError(f"plan not found for campaign_id={campaign_id}")
@@ -71,8 +53,12 @@ class ProspectingWorker:
             cfg = (campaign or {}).get("config") or {}
             if "min_icp_score" in cfg:
                 min_score = float(cfg["min_icp_score"])
-        except Exception:
-            pass
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "invalid min_icp_score on campaign_id=%s; falling back to default",
+                campaign_id,
+                exc_info=exc,
+            )
 
         company_docs = self._mongo.get_companies(company_ids)
         companies = [CompanyDocument.model_validate(doc).model_dump(mode="python") for doc in company_docs]
@@ -99,7 +85,6 @@ class ProspectingWorker:
                 continue
             c_score = score_company(c, plan)
 
-            # persist company score
             self._mongo.update_company_score(cid, campaign_id, c_score)
 
             for p in persons_by_company.get(cid, []):
@@ -109,8 +94,9 @@ class ProspectingWorker:
                 p_score = score_person(p, plan)
                 total = combined_score(c_score, p_score)
 
-                # persist person score
                 self._mongo.update_person_score(pid, campaign_id, p_score)
+                if p.get("email"):
+                    self._mongo.update_person_email_verified(pid, True)
 
                 if total >= min_score:
                     prospects.append(Prospect(company_id=cid, poc_id=pid, score=total))
@@ -119,22 +105,8 @@ class ProspectingWorker:
 
         ranked = [RankedProspect(company_id=p.company_id, poc_id=p.poc_id, score=round(p.score, 6)) for p in prospects]
         output = ProspectingCompletedEvent(
-            event_id=event.event_id,
-            schema_version=event.schema_version,
             campaign_id=campaign_id,
-            plan_id=event.plan_id,
-            trace_id=event.trace_id,
-            idempotency_key=event.idempotency_key,
             ranked_prospects=ranked,
-        )
-        self._mongo.upsert_run(
-            {
-                **run_base.model_dump(mode="json", exclude_none=True),
-                "status": "completed",
-                "ranked_prospects": [p.model_dump(mode="json", exclude_none=True) for p in ranked],
-                "output_event": output.model_dump(mode="json", exclude_none=True),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
         )
         return output.model_dump(mode="json", exclude_none=True)
 

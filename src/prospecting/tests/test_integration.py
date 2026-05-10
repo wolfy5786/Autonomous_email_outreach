@@ -106,7 +106,7 @@ def verify_scoring_fields() -> Tuple[bool, str]:
         person_with_score = db.persons.find_one({
             "$or": [
                 {"icp_poc_score": {"$exists": True}},
-                {"prospecting_metadata": {"$exists": True}}
+                {"email_verified": True}
             ]
         })
         
@@ -114,8 +114,8 @@ def verify_scoring_fields() -> Tuple[bool, str]:
             message = "Found prospect with scoring data:\n"
             if "icp_poc_score" in person_with_score:
                 message += f"  - ICP POC Score: {person_with_score['icp_poc_score']}"
-            if "prospecting_metadata" in person_with_score:
-                message += f"\n  - Metadata: {person_with_score['prospecting_metadata']}"
+            if "email_verified" in person_with_score:
+                message += f"\n  - Email verified: {person_with_score['email_verified']}"
             return True, message
         else:
             return True, "No scored prospects found yet (waiting for message processing)"

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 
 import pika
 from pymongo import MongoClient
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("prospecting.container_start")
 
 
 def _as_bool(value: str) -> bool:
@@ -35,7 +43,7 @@ def _wait_for_dependencies() -> None:
         try:
             _check_mongodb(mongodb_uri)
             _check_rabbitmq(rabbitmq_url)
-            print("Dependencies are reachable (MongoDB and RabbitMQ).")
+            logger.info("dependencies are reachable (MongoDB and RabbitMQ)")
             return
         except Exception as exc:
             if attempt == retries:
@@ -44,17 +52,18 @@ def _wait_for_dependencies() -> None:
                     f"MongoDB URI={mongodb_uri}, RabbitMQ URL={rabbitmq_url}"
                 ) from exc
 
-            print(
-                f"Dependency check failed (attempt {attempt}/{retries}). "
-                f"Retrying in {sleep_seconds}s..."
+            logger.warning(
+                "dependency check failed (attempt %s/%s); retrying in %ss",
+                attempt,
+                retries,
+                sleep_seconds,
+                exc_info=exc,
             )
             time.sleep(sleep_seconds)
 
 
 def main() -> None:
-    print("========================================")
-    print("Prospecting Service - Container Startup")
-    print("========================================")
+    logger.info("prospecting service container startup")
 
     os.environ.setdefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
     os.environ.setdefault("RABBITMQ_EXCHANGE", "email_outreach.events")
@@ -67,9 +76,9 @@ def main() -> None:
     if wait_for_deps:
         _wait_for_dependencies()
     else:
-        print("Skipping dependency checks because WAIT_FOR_DEPS is disabled.")
+        logger.info("skipping dependency checks because WAIT_FOR_DEPS is disabled")
 
-    print("Starting prospecting service...")
+    logger.info("starting prospecting service")
     from app.main import main as start_app
 
     start_app()
