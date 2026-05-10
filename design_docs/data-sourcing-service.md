@@ -1,6 +1,6 @@
 # Data Sourcing Service
 
-Implementation-oriented design for the **Sourcing** service: company discovery, attribute mining, validation, and persistence. It aligns with the system overview in [README.md](../README.md) and the repository layout in [Repository_structure.md](../Repository_structure.md).
+Implementation-oriented design for the **Sourcing** service: validated discovery, enrichment, POC identity cues, hints, provenance — aligned with [`data_sourcing_map.md`](../data_sourcing_map.md), additive Plan filters in [`planning_service_role.md`](../planning_service_role.md), and the system overview in [`README.md`](../README.md).
 
 ## Table of contents
 
@@ -20,21 +20,21 @@ Implementation-oriented design for the **Sourcing** service: company discovery, 
 
 ## 1. Purpose and service boundary
 
-**Role:** Mine public data to find **relevant companies** and **enrich company records** (attributes, signals, evidence) against the campaign’s Ideal Customer Profile (ICP), using a **cache-first** strategy and layered APIs plus headless scraping.
+**Role:** Mine public data to find **relevant companies**, enrich **company records**, and attach **POC identities** (names, titles, public profile cues) matching the Plan Document — using a **cache-first** strategy aligned with [`data_sourcing_map.md`](../data_sourcing_map.md) (directories → validation → enrichment). **Commercial work email acquisition** is **not** part of this service.
 
 **In scope**
 
-- Consume `sourcing.requested` and load the **Plan Document** (via `plan_id`) for attribute targets and constraints.
+- Consume `sourcing.requested` and load the **Plan Document** (via `plan_id`) for attribute targets, [`planning_service_role.md`](../planning_service_role.md) **search blocks** where present, and constraints.
 - Build an **attribute-to-source map** before calling external systems.
-- **Company discovery:** produce a candidate list of companies that match the ICP (where the plan allows).
-- **Company enrichment:** fill `company_record` fields and optional `extra` keys from approved sources.
-- Normalize output, attach **provenance** (URL, source name, extraction method, timestamp), compute **data completeness**, and publish `sourcing.completed` or `sourcing.partial`.
+- **Company discovery:** validated candidate domains from Tier A directories and Tier B hints (validated before enrichment spend).
+- **Company enrichment:** fill `company_record` fields and `extra` from approved sources (web, careers, filings, SERP scoped to known companies, etc.).
+- **POC identity:** identify plausible contacts from public sources permitted by policy (sites, announcements, NIH PIs, Product Hunt makers, etc.) and persist `persons` skeletons linked to companies — **without** Apollo/Hunter email waterfall.
+- Normalize output, attach **provenance**, compute **data completeness**, emit `sourcing.completed` / `sourcing.partial`.
 
 **Out of scope (belongs to Prospecting)**
 
-- **POC (person-of-contact) discovery**, title fit, seniority scoring, or ranking prospects.
-- **ICP fit scoring** and thresholding.
-- Email draft generation or review.
+- **Work email lookup, enrichment, or verification** (Apollo.io, Hunter.io, similar).
+- **ICP fit scoring**, ranking, and cutoff thresholds vs the Plan weights.
 
 ---
 
@@ -42,9 +42,9 @@ Implementation-oriented design for the **Sourcing** service: company discovery, 
 
 | Service    | Responsibility |
 |-----------|----------------|
-| **Planning** | Produces the Plan Document: `company_signals`, `poc_signals`, `scoring_weights`, `personalization_hooks`, tone, angle. Sourcing uses **company signals** and hooks to drive *what* to mine; it does **not** use POC scoring weights for sourcing logic. |
-| **Sourcing** | Companies + enrichment + evidence; no prospect scores. |
-| **Prospecting** | Scores sourced companies/POCs, ranks prospects, handles POC discovery workflows. |
+| **Planning** | Produces the Plan Document: `company_signals`, `poc_signals`, `scoring_weights`, `personalization_hooks`, tone, angle, plus optional per-source **`search_blocks`**, **`global_filters`**, and **`outreach_context`** ([`planning_service_role.md`](../planning_service_role.md)). |
+| **Sourcing** | Validated discovery + enrichment + **POC identity**; persists companies, hints, POC skeletons with provenance. **No** Apollo/Hunter email passes. |
+| **Prospecting** | **Apollo / Hunter-style email discovery & verification**, ICP scoring, semantic search over `extra`, ranking vs thresholds — then hands ranked prospects toward messaging. |
 
 ---
 
@@ -83,7 +83,7 @@ sourcing.requested → { campaign_id, plan_id, target_entities[] }
 
 ### 3.2 Outputs
 
-- **NoSQL:** Upserted `company_record` documents (see [§9](#9-storage-model)).
+- **MongoDB:** Upserted `company_record` and linked `person` / POC identity documents where applicable (see [§9](#9-storage-model)).
 - **Events:**
   - `sourcing.completed` — `{ campaign_id, entity_ids[] }` (entity IDs = sourced company IDs).
   - `sourcing.partial` — `{ campaign_id, entity_id, missing_fields[] }` when enrichment is incomplete but still useful.
@@ -106,21 +106,22 @@ Optional extension for observability (if all consumers tolerate extra keys):
 
 ## 4. End-to-end pipeline
 
-1. **Load plan** — Fetch `plan_record` / Plan Document by `plan_id`; read `company_signals`, `personalization_hooks`, and any campaign-specific flags.
-2. **Cache check** — For each candidate or seed company, apply the **cache-first** rules from [README.md](../README.md) (no data → scrape all; partial → targeted gap fill; fresh + complete → no scrape).
-3. **Build attribute source map** — Deterministic map from requested attributes → sources, query templates, extraction schemas, fallbacks ([§5](#5-attribute-source-map)).
-4. **Company discovery** — If needed, query **allowed discovery sources** (e.g. [YC Startup Directory](https://www.ycombinator.com/companies)) with ICP filters; optionally use **hint** sources ([Hacker News newest](https://news.ycombinator.com/newest)) only to surface leads, not as canonical identity.
+1. **Load plan** — Fetch `plan_record` / Plan Document by `plan_id`; read `company_signals`, `poc_signals`, `personalization_hooks`, **`search_blocks` / sourcing config** ([`planning_service_role.md`](../planning_service_role.md)), and campaign flags.
+2. **Cache check** — For each candidate or seed entity, apply the **cache-first** rules from [README.md](../README.md) (no data → scrape all; partial → gap fill; fresh + complete → no scrape).
+3. **Build attribute source map** — Deterministic map from requested attributes → sources, templates, schemas, fallbacks ([§5](#5-attribute-source-map)); align sources with [`data_sourcing_map.md`](../data_sourcing_map.md).
+4. **Company discovery** — Tier A directories (YC, Crunchbase, Product Hunt; NIH Reporter for HC) plus Tier B hints (HN, public LinkedIn company pages) validated before enrichment ([`data_sourcing_map.md`](../data_sourcing_map.md)).
 5. **Candidate validation** — Relevance, deduplication, domain sanity, blocklists ([§8](#8-validation-gates-and-failure-modes)).
-6. **Company mining** — Layer 1 APIs where configured; Layer 2 crawl4ai + LLM extraction for web; **SERP only for known companies** ([§6](#6-source-catalog-and-usage-rules)).
-7. **Enrichment validation** — Schema, evidence, confidence, conflicts, completeness.
-8. **Store and emit** — Persist records, publish `sourcing.completed` or `sourcing.partial`.
+6. **Company enrichment** — Website/blog + careers pipelines (crawl4ai + LLM), targeted filings (e.g. SEC Form D), OpenCorporates, SERP anchored to `(name, domain)` only ([§6](#6-source-catalog-and-usage-rules)).
+7. **POC identity mining** — Public sources only — fill names/titles/URLs per `poc_signals` without commercial email enrichment.
+8. **Enrichment validation** — Schema, evidence, completeness.
+9. **Store and emit** — Persist MongoDB documents + hints, publish `sourcing.completed` or `sourcing.partial`.
 
 ```mermaid
 flowchart TD
   PlanReady["Plan Document Ready"] --> BuildMap["Build Attribute Source Map"]
   BuildMap --> CompanyDiscovery["Find Relevant Companies"]
   CompanyDiscovery --> CandidateValidation["Validate Candidate Companies"]
-  CandidateValidation --> CompanyMining["Mine Company Attributes"]
+  CandidateValidation --> CompanyMining["Enrich Companies + POC Identity"]
   CompanyMining --> EnrichmentValidation["Validate Enrichment"]
   EnrichmentValidation --> StoreData["Store Company Records"]
   StoreData --> PublishEvent["Publish Sourcing Event"]
@@ -138,7 +139,7 @@ Before calling external APIs or scrapers, Sourcing builds a **AttributeSourceMap
 |-------|------|-------------|
 | `attribute` | `string` | Logical name, e.g. `domain`, `industry`, `employee_count`, `funding_stage`, `tech_stack`, `description`, `linkedin_company_url`, `recent_news_summary`. |
 | `source_type` | `enum` | `api`, `serp`, `scrape`, `directory`, `hint_feed`. |
-| `source_name` | `string` | e.g. `apollo`, `yc_directory`, `company_website`, `serp`, `hn_newest`. |
+| `source_name` | `string` | e.g. `yc_directory`, `product_hunt`, `company_website`, `serp`, `hn_newest`. |
 | `allowed_for_discovery` | `boolean` | If `true`, this source may be used to **enumerate** candidate companies. |
 | `allowed_for_enrichment` | `boolean` | If `true`, may be used to **fill attributes** for a known company. |
 | `query_template` | `string \| null` | Template with placeholders: `{{company_name}}`, `{{domain}}`, `{{icp_keyword}}`. Used for SERP or directory search. |
@@ -194,7 +195,7 @@ attributes:
 ### 6.1 Y Combinator — [The YC Startup Directory](https://www.ycombinator.com/companies)
 
 - **Use:** Startup-oriented **discovery** and structured fields available on directory/company pages (e.g. name, description, batch, website).
-- **Layer:** Treat as **directory** / **Layer 2 scrape** depending on whether you use a public API or HTML; align with [README.md](../README.md) Layer 1 vs Layer 2 split for your integration.
+- **Integration:** Prefer HTML scrape / CSV parity with **`data_sourcing_map.md`**; treat as authoritative **Tier A discovery** whenever the startup vertical applies.
 
 ### 6.2 Hacker News — [newest](https://news.ycombinator.com/newest)
 
@@ -208,24 +209,19 @@ attributes:
 - **Typical queries:** Funding, press, careers page, product launch, site-specific pages.
 - **Do not:** Use unconstrained SERP to harvest large company lists (cost, quality, policy).
 
-### 6.4 LinkedIn
+### 6.4 LinkedIn (public company pages)
 
-- **Use:** Company page fields where contractually and technically permitted (often via official API as **Layer 1** in [README.md](../README.md)); scraping public pages falls under **Layer 2** and must follow [§11](#11-operational-constraints).
-- **Typical attributes:** Employee range, industry, description, company URL.
+- **Use:** **Discovery hints** + light company-profile enrichment when policy allows scraping public listing pages (`data_sourcing_map.md` Tier B / enrichment).
+- **Typical attributes:** Employee range band, industry, description, canonical company URL — **not** logged-in recruiter APIs unless separately licensed.
 
 ### 6.5 Company website / blog / careers
 
 - **Use:** Primary **enrichment** for description, stack hints, hiring signals, and personalization hooks.
 - **Mechanism:** crawl4ai → markdown → low-cost LLM extraction ([§7](#7-scraping-and-extraction-pipeline)).
 
-### 6.6 Alignment with README layers
+### 6.6 Alignment with README + data sourcing map
 
-From [README.md](../README.md):
-
-- **Layer 1:** Structured APIs (Apollo, Hunter, LinkedIn, GitHub, etc.) — prefer when available and sufficient.
-- **Layer 2:** Headless browser scraping (crawl4ai, browser-use, Firecrawl) when Layer 1 leaves gaps.
-
-The attribute map should prefer Layer 1 rules first, then Layer 2 with `fallback_sources`.
+Sourcing pipelines follow **`data_sourcing_map.md`** *Phase 1 (discovery)* and *Phase 2 (enrichment)* — **directories and APIs where available**, scoped **SERP**, and **headless crawl** for owned web properties — **not** the legacy “Layer 1 = commercial contact APIs” split (those APIs are bounded to Prospecting email workflows in [README.md](../README.md)). Use `fallback_sources` in attribute rules to encode the Tier A/Tier B precedence from the map.
 
 ---
 
@@ -287,7 +283,7 @@ Use in logs, `sourcing.partial` context, and internal `company_record` status if
 
 ## 9. Storage model
 
-Compatible with `company_record` in [README.md](../README.md): core fields plus semi-structured `extra`.
+Compatible with `company_record` in [README.md](../README.md): core fields plus semi-structured `extra`; stored as documents in **MongoDB** alongside linked POC identity records emitted by this service before Prospecting enrichment.
 
 ### 9.1 Provenance and evidence
 
@@ -297,7 +293,7 @@ Extend each stored attribute (core or `extra`) with optional **provenance** meta
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `source_name` | `string` | e.g. `linkedin_api`, `serp`, `yc_directory`, `company_website` |
+| `source_name` | `string` | e.g. `linkedin_public_company`, `serp`, `yc_directory`, `company_website` |
 | `source_type` | `enum` | `api` \| `serp` \| `scrape` \| `directory` \| `hint_feed` |
 | `observed_value` | `any \| null` | Raw value from the source before normalization |
 | `normalized_value` | `any \| null` | Value after normalization (what is stored in the field / `extra` key) |
@@ -323,8 +319,8 @@ When two sources disagree on the same attribute, the higher-confidence value win
   "extra": {},
   "provenance": {
     "industry": {
-      "source_name": "linkedin_api",
-      "source_type": "api",
+      "source_name": "linkedin_public_company",
+      "source_type": "scrape",
       "observed_value": "Computer Software",
       "normalized_value": "developer tools",
       "confidence": 0.9,
@@ -406,18 +402,18 @@ Collection: `hints`. See `src/shared/models/hint.py` (`Hint` / Beanie).
 ## 11. Operational constraints
 
 - **Rate limits:** Per provider token bucket; global concurrency cap for headless browsers on scraping node pools.
-- **Robots.txt / ToS:** Respect site policies; prefer official APIs for LinkedIn and similar.
+- **Robots.txt / ToS:** Respect site policies; **public-page scraping only** for LinkedIn unless a separate vendor API contract exists.
 - **User-Agent:** Identifiable, honest UA string; include contact in comments if required by policy.
 - **SERP:** Quota and cost monitoring; block overly generic queries.
 - **Secrets:** API keys in secrets manager, not in code (see [Repository_structure.md](../Repository_structure.md), `email-outreach/*` secrets).
 - **Observability:** Log `source_name`, `latency_ms`, `outcome` per call; trace IDs across fetch → markdown → LLM.
-- **LLM use:** Extraction and summarization only; ICP and POC decisions live in **Prospecting** and **Planning**.
+- **LLM use:** Extraction and summarization only; deterministic validation gates stay here. **Scoring thresholds and outbound email-worthiness** are decided in Prospecting once commercial emails exist.
 
 ---
 
 ## Document history
 
 - **v1** — Initial implementation-oriented Sourcing spec (attribute map, sources, pipeline, storage, queues).
-- **v2** — Section 9.1: formal `AttributeProvenance` field list; new §9.3 Hints collection and link to `src/shared` models.
+- **v3** — Service boundary refresh: POC identity vs Apollo/Hunter; MongoDB wording; aligns docs with README + sourcing map rewrite.
 
-See also: [README.md](../README.md) (Sourcing Service, Data Pipeline, Data Schema, Message Queues), [Repository_structure.md](../Repository_structure.md).
+See also: [README.md](../README.md), [`data_sourcing_map.md`](../data_sourcing_map.md), [`planning_service_role.md`](../planning_service_role.md), [Repository_structure.md](../Repository_structure.md).

@@ -47,20 +47,18 @@ email_outreach/
 ├── src/
 │   ├── local_infrastructure/               # Local dev infrastructure
 │   │   ├── k8/                             # Kubernetes manifests for local dev cluster
-│   │   ├── rabbit_mq/                      # RabbitMQ adapter (dev message broker)
-│   │   ├── factory/                        # Broker factory — abstracts broker via BROKER_TYPE env
+│   │   ├── rabbit_mq/                      # Local RabbitMQ (Docker) — same broker model as prod
 │   │   └── observability/                  # Local Prometheus + Grafana + RabbitMQ exporter configs
 │   │
 │   ├── orchestrator/                       # Entry point, pipeline coordinator, all API endpoints
 │   ├── planning/                           # ICP analysis → Plan Document (LLM)
-│   ├── sourcing/                           # Data mining — Layer 1 APIs + Layer 2 headless browsers
+│   ├── sourcing/                           # Discovery + enrichment (see data_sourcing_map.md)
 │   ├── prospecting/                        # ICP scoring + semantic search on extra fields
 │   ├── messaging/                          # Draft generation (LLM) + write draft to user email account
 │   └── web-ui/                             # Static SPA — campaign mgmt, prospects, draft status, pipeline monitoring
 │
 ├── README.md
 ├── cloud_INFRASTRUCTURE.md
-├── messaging_infrastructure.md
 └── Repository_structure.md
 ```
 
@@ -71,8 +69,7 @@ All inter-service communication is async via message queues — services never c
 The Review Service and Send Service are removed. Review-related API endpoints are absorbed into `orchestrator`. The Messaging Service writes drafts directly to the user's email account (Gmail / Microsoft) and marks the task completed.
 
 **Messaging** (`src/local_infrastructure/`)  
-Local dev uses **RabbitMQ** (`rabbit_mq/`). Production uses **RabbitMQ** in-cluster or Amazon MQ for RabbitMQ.  
-The broker factory (`factory/`) switches via the `BROKER_TYPE` env var — service code is broker-agnostic.
+Local dev runs **RabbitMQ** in Docker (`rabbit_mq/`). Production uses **RabbitMQ** in-cluster on EKS or **Amazon MQ for RabbitMQ** — the same AMQP topology and queue names as documented in the root `README.md`.
 
 **Observability**  
 - *Cloud*: `cloud_terraform/modules/observability/` provisions CloudWatch log groups, SNS alarms, and metric filters. `deploy/platform/kube-prometheus-stack-values.yaml` + `fluent-bit-values.yaml` deploy Prometheus/Grafana and log shipping in-cluster.  
