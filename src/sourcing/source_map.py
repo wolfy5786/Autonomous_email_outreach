@@ -397,10 +397,10 @@ CATALOG: list[AttributeSourceMapRule] = _catalog()
 
 def build_source_map(plan: PlanRecord) -> list[AttributeSourceMapRule]:
     """
-    Return rules from ``CATALOG`` for baseline + plan ``company_signals``,
-    plus one enrichment rule per ``personalization_hooks`` entry.
+    Return rules from ``CATALOG`` for baseline attributes, plus one enrichment
+    rule per ``outreach_context.personalization_hints`` entry.
     """
-    selected: set[str] = set(BASELINE_ATTRIBUTES) | set(plan.company_signals)
+    selected: set[str] = set(BASELINE_ATTRIBUTES)
 
     by_key: dict[tuple[str, str], AttributeSourceMapRule] = {}
     for rule in CATALOG:
@@ -413,10 +413,11 @@ def build_source_map(plan: PlanRecord) -> list[AttributeSourceMapRule]:
 
     rules = sorted(by_key.values(), key=lambda r: (r.attribute, r.priority, r.source_name))
 
-    # Personalization hooks → enrichment via company website (crawl4ai + LLM)
+    # Personalization hints → enrichment via company website (crawl4ai + LLM)
+    hints = (plan.outreach_context.personalization_hints if plan.outreach_context else None) or []
     hook_priority = 50
-    for hook in plan.personalization_hooks:
-        attr = f"hook:{hook}"
+    for hint in hints:
+        attr = f"hook:{hint}"
         rules.append(
             AttributeSourceMapRule(
                 attribute=attr,

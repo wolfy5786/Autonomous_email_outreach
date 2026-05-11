@@ -3,14 +3,10 @@
   "users": [
     {
       "name": "guest",
-      "password_hash": "kI3GCrswBLNZQzHJJ95QLoyfAVooYhnvf7jbqiW9BjOYUloe",
+      "password_hash": "cJ6rf+XPiUu4Sbww8oJjqM1GqL6oJ65fXNeIW9Qmk2aIlZTf",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
-      "tags": "administrator"
-    }
-  ],
-  "vhosts": [
-    {
-      "name": "/"
+      "tags": ["administrator"],
+      "limits": {}
     }
   ],
   "permissions": [
@@ -20,6 +16,11 @@
       "configure": ".*",
       "write": ".*",
       "read": ".*"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
     }
   ],
   "exchanges": [

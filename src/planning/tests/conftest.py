@@ -33,30 +33,34 @@ def sample_product() -> dict[str, Any]:
 @pytest.fixture
 def valid_llm_output_dict() -> dict[str, Any]:
     return {
-        "company_signals": [
-            "HQ in US or EU, 50-500 employees on LinkedIn",
-            "uses Kubernetes in production (k8s manifests in public GitHub repos)",
-            "Series A to Series B (public press or SEC Form D) within last 18 months",
+        "sources": [
+            {
+                "source": "product_hunt",
+                "enabled": True,
+                "filters": {
+                    "topics": ["Developer Tools", "SaaS"],
+                    "min_votes": 50,
+                },
+            },
+            {
+                "source": "yc_news",
+                "enabled": True,
+                "filters": {
+                    "batch_years": ["W23", "S23", "W24"],
+                    "industries": ["B2B", "DevTools"],
+                },
+            },
         ],
-        "poc_signals": [
-            "title contains 'VP Engineering' or 'Director of Platform'",
-            "tenure >= 6 months at current company",
-            "located in US or EU",
-        ],
-        "scoring_weights": {
-            "industry_match": 0.25,
-            "size_match": 0.15,
-            "tech_stack_match": 0.30,
-            "seniority_match": 0.15,
-            "title_match": 0.15,
+        "global_filters": {
+            "employee_count_range": {"min": 50, "max": 500},
+            "languages": ["en"],
         },
-        "personalization_hooks": [
-            "funding round announced in last 90 days",
-            "new job postings for platform/infra roles in last 30 days",
-            "recent engineering-blog post about Kubernetes",
-        ],
-        "email_tone": "technical",
-        "email_angle": "Help platform teams cut incident response time by correlating deploys with runtime anomalies in under two minutes.",
+        "outreach_context": {
+            "campaign_goal": "Book a discovery call",
+            "tone": "technical",
+            "personalization_hints": ["mention recent Product Hunt launch"],
+            "sequence_length": 3,
+        },
     }
 
 

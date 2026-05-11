@@ -54,32 +54,14 @@ Implementation-oriented design for the **Sourcing** service: validated discovery
 
 Base contract (from [README.md](../README.md)):
 
-```text
-sourcing.requested → { campaign_id, plan_id, target_entities[] }
-```
-
-**Implementation extension (recommended):** the Orchestrator may include optional fields Sourcing should accept without breaking older consumers:
-
 ```json
 {
   "campaign_id": "uuid",
-  "plan_id": "uuid",
-  "target_entities": [],
-  "request_id": "uuid",
-  "config": {
-    "max_companies": 500,
-    "discovery_mode": "yc_only | broad | seed_domains",
-    "freshness_override_days": null
-  },
-  "seeds": {
-    "domains": ["example.com"],
-    "company_names": ["Acme Inc"]
-  }
+  "plan_id": "uuid"
 }
 ```
 
-- `target_entities` may be empty when the campaign expects **discovery-only** from configured sources (e.g. YC directory + filters); otherwise it lists explicit companies/domains to enrich.
-- `request_id` supports idempotency and deduplication of writes (see [§10](#10-queue-contracts-and-idempotency)).
+> **Future:** once the Orchestrator service lands, the payload will also carry a `request_id` (one campaign can fan out into multiple sourcing requests). Sourcing should treat unknown extra fields as forward-compatible.
 
 ### 3.2 Outputs
 
@@ -382,7 +364,7 @@ Collection: `hints`. See `src/shared/models/hint.py` (`Hint` / Beanie).
 
 | Event | Payload |
 |-------|---------|
-| `sourcing.requested` | `{ campaign_id, plan_id, target_entities[] }` |
+| `sourcing.requested` | `{ campaign_id, plan_id }` |
 | `sourcing.completed` | `{ campaign_id, entity_ids[] }` |
 | `sourcing.partial` | `{ campaign_id, entity_id, missing_fields[] }` |
 

@@ -4,8 +4,24 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from planning.schemas import LLMPlanOutput, LLMUsage, PlanRecord, PlanReadyEvent, PlanRequestedEvent
+from planning.schemas import (
+    EmployeeCountRange,
+    GlobalFilters,
+    HackerNewsSource,
+    LLMPlanOutput,
+    LLMUsage,
+    OutreachContext,
+    PlanReadyEvent,
+    PlanRecord,
+    PlanRequestedEvent,
+    ProductHuntSource,
+    SourcingRequestedEvent,
+    YCDirectorySource,
+    YCNewsSource,
+)
 
+
+# --- Events ---
 
 def test_plan_requested_event_ignores_extras() -> None:
     ev = PlanRequestedEvent.model_validate({"campaign_id": "c1", "irrelevant": "ok"})
@@ -17,38 +33,165 @@ def test_plan_ready_event_requires_both_ids() -> None:
         PlanReadyEvent.model_validate({"campaign_id": "c1"})
 
 
+def test_sourcing_requested_event_requires_both_ids() -> None:
+    with pytest.raises(ValidationError):
+        SourcingRequestedEvent.model_validate({"campaign_id": "c1"})
+
+
+# --- LLM plan output happy path ---
+
 def test_llm_plan_output_happy(valid_llm_output_dict: dict) -> None:
     out = LLMPlanOutput.model_validate(valid_llm_output_dict)
-    assert abs(sum(out.scoring_weights.values()) - 1.0) < 0.05
+    assert len(out.sources) == 2
+    assert isinstance(out.sources[0], ProductHuntSource)
+    assert isinstance(out.sources[1], YCNewsSource)
+    assert out.outreach_context is not None
+    assert out.outreach_context.sequence_length == 3
 
 
-def test_llm_plan_output_weights_must_sum_to_one(valid_llm_output_dict: dict) -> None:
+def test_llm_plan_output_empty_sources_is_valid() -> None:
+    """If the ICP doesn't justify any source, an empty plan is allowed."""
+    out = LLMPlanOutput.model_validate({})
+    assert out.sources == []
+    assert out.global_filters is None
+    assert out.outreach_context is None
+
+
+# --- Closed schema ---
+
+def test_llm_plan_output_extra_fields_rejected(valid_llm_output_dict: dict) -> None:
     bad = dict(valid_llm_output_dict)
-    bad["scoring_weights"] = {"industry_match": 0.2, "size_match": 0.2}  # sums to 0.4
+    bad["unexpected"] = "oops"
     with pytest.raises(ValidationError):
         LLMPlanOutput.model_validate(bad)
 
 
-def test_llm_plan_output_rejects_negative_weights(valid_llm_output_dict: dict) -> None:
-    bad = dict(valid_llm_output_dict)
-    bad["scoring_weights"] = {"a": 1.2, "b": -0.2}  # sums to 1.0 but has negative
+def test_source_block_extra_filter_rejected() -> None:
+    bad = {
+        "sources": [
+            {
+                "source": "product_hunt",
+                "enabled": True,
+                "filters": {"topics": ["AI"], "not_a_real_filter": 1},
+            }
+        ]
+    }
     with pytest.raises(ValidationError):
         LLMPlanOutput.model_validate(bad)
 
 
-def test_llm_plan_output_email_tone_is_restricted(valid_llm_output_dict: dict) -> None:
-    bad = dict(valid_llm_output_dict)
-    bad["email_tone"] = "flirty"
+# --- Discriminated union routes filters to the right model ---
+
+def test_unknown_source_rejected() -> None:
+    bad = {"sources": [{"source": "made_up_source", "filters": {}}]}
     with pytest.raises(ValidationError):
         LLMPlanOutput.model_validate(bad)
 
 
-def test_llm_plan_output_requires_min_signals(valid_llm_output_dict: dict) -> None:
-    bad = dict(valid_llm_output_dict)
-    bad["company_signals"] = ["only one"]
+def test_oc_status_must_be_one_of_three_values() -> None:
+    bad = {"sources": [{"source": "open_corporates", "filters": {"status": "pending"}}]}
     with pytest.raises(ValidationError):
         LLMPlanOutput.model_validate(bad)
 
+
+def test_yc_directory_status_must_be_one_of_three_values() -> None:
+    bad = {"sources": [{"source": "yc_directory", "filters": {"status": "Pending"}}]}
+    with pytest.raises(ValidationError):
+        LLMPlanOutput.model_validate(bad)
+
+
+def test_yc_directory_routes_to_correct_model() -> None:
+    plan = LLMPlanOutput.model_validate(
+        {
+            "sources": [
+                {
+                    "source": "yc_directory",
+                    "filters": {
+                        "status": "Active",
+                        "batch_years": ["W24"],
+                        "is_hiring": True,
+                    },
+                }
+            ]
+        }
+    )
+    src = plan.sources[0]
+    assert isinstance(src, YCDirectorySource)
+    assert src.filters.is_hiring is True
+
+
+def test_hacker_news_tags_restricted_to_known_values() -> None:
+    bad = {"sources": [{"source": "hacker_news", "filters": {"tags": ["job"]}}]}
+    with pytest.raises(ValidationError):
+        LLMPlanOutput.model_validate(bad)
+
+
+def test_hacker_news_routes_to_correct_model() -> None:
+    plan = LLMPlanOutput.model_validate(
+        {
+            "sources": [
+                {
+                    "source": "hacker_news",
+                    "filters": {
+                        "query": "AI agents",
+                        "tags": ["show_hn"],
+                        "min_points": 50,
+                    },
+                }
+            ]
+        }
+    )
+    src = plan.sources[0]
+    assert isinstance(src, HackerNewsSource)
+    assert src.filters.min_points == 50
+
+
+def test_oc_filters_route_to_open_corporates() -> None:
+    plan = LLMPlanOutput.model_validate(
+        {
+            "sources": [
+                {
+                    "source": "open_corporates",
+                    "filters": {
+                        "jurisdiction_code": "us",
+                        "status": "active",
+                        "industry_keywords": ["software"],
+                    },
+                }
+            ]
+        }
+    )
+    src = plan.sources[0]
+    assert src.source == "open_corporates"
+    assert src.filters.jurisdiction_code == "us"
+
+
+# --- Global filters ---
+
+def test_employee_count_range_max_must_be_ge_min() -> None:
+    with pytest.raises(ValidationError):
+        EmployeeCountRange.model_validate({"min": 100, "max": 50})
+
+
+def test_global_filters_optional() -> None:
+    gf = GlobalFilters.model_validate({})
+    assert gf.exclude_domains is None
+    assert gf.employee_count_range is None
+
+
+def test_global_filters_extra_rejected() -> None:
+    with pytest.raises(ValidationError):
+        GlobalFilters.model_validate({"exclude_domains": [], "fake_key": True})
+
+
+# --- Outreach context ---
+
+def test_outreach_context_sequence_length_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        OutreachContext.model_validate({"sequence_length": 0})
+
+
+# --- PlanRecord wraps LLMPlanOutput with metadata ---
 
 def test_plan_record_requires_meta(valid_llm_output_dict: dict) -> None:
     record = PlanRecord(
@@ -61,10 +204,4 @@ def test_plan_record_requires_meta(valid_llm_output_dict: dict) -> None:
     )
     assert record.campaign_id == "c1"
     assert record.llm_usage.total_tokens == 300
-
-
-def test_llm_plan_output_extra_fields_rejected(valid_llm_output_dict: dict) -> None:
-    bad = dict(valid_llm_output_dict)
-    bad["unexpected"] = "oops"
-    with pytest.raises(ValidationError):
-        LLMPlanOutput.model_validate(bad)
+    assert len(record.sources) == 2
