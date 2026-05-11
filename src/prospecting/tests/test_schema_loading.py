@@ -111,6 +111,13 @@ def test_schema_and_loading() -> Tuple[bool, str]:
             return False, "company score was not persisted"
         if person.get("icp_poc_score") is None:
             return False, "person score was not persisted"
+        # verify campaign-scoped prospecting_scores were written
+        comp_scores = company.get("prospecting_scores") or {}
+        pers_scores = person.get("prospecting_scores") or {}
+        if not comp_scores.get("campaign-001"):
+            return False, "company campaign-scoped score missing"
+        if not pers_scores.get("campaign-001"):
+            return False, "person campaign-scoped score missing"
         if person.get("email_verified") is not True:
             return False, "person email_verified flag was not updated"
         if company.get("scoring_version") != "v1" or person.get("scoring_version") != "v1":

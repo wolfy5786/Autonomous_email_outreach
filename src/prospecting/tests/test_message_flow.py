@@ -8,10 +8,21 @@ import sys
 import json
 import pika
 import time
+import uuid
 from typing import Tuple
 from datetime import datetime
 
-def publish_sourcing_completed_event() -> Tuple[bool, str]:
+
+def _build_test_event(event_id: str | None = None) -> dict:
+    test_event_id = event_id or f"evt-{uuid.uuid4()}"
+    return {
+        "campaign_id": "test-campaign-001",
+        "entity_ids": ["company-test-001", "company-test-002"],
+        "event_id": test_event_id,
+        "idempotency_key": test_event_id,
+    }
+
+def publish_sourcing_completed_event(event_payload: dict | None = None) -> Tuple[bool, str]:
     """Publish a sourcing.completed event to test queue consumption."""
     try:
         url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
@@ -36,10 +47,7 @@ def publish_sourcing_completed_event() -> Tuple[bool, str]:
         channel.queue_bind(exchange=exchange, queue='sourcing.completed', routing_key='sourcing.completed')
         
         # Create a test event that matches the locked contract
-        event_payload = {
-            "campaign_id": "test-campaign-001",
-            "entity_ids": ["company-test-001", "company-test-002"]
-        }
+        event_payload = event_payload or _build_test_event()
         
         # Publish the event
         channel.basic_publish(
@@ -57,6 +65,67 @@ def publish_sourcing_completed_event() -> Tuple[bool, str]:
         return True, f"Published sourcing.completed event with {len(event_payload['entity_ids'])} entities"
     except Exception as e:
         return False, f"Failed to publish event: {str(e)}"
+
+
+def duplicate_event_idempotency_test() -> Tuple[bool, str]:
+    """Publish the same sourcing event twice and ensure only one prospecting.completed message is emitted."""
+    try:
+        url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
+        exchange = os.getenv("RABBITMQ_EXCHANGE", "email_outreach.events")
+
+        connection = pika.BlockingConnection(pika.URLParameters(url))
+        channel = connection.channel()
+
+        channel.exchange_declare(exchange=exchange, exchange_type='topic', durable=True, passive=True)
+        test_queue = f"prospecting.completed.test.{uuid.uuid4().hex}"
+        channel.queue_declare(queue=test_queue, exclusive=True, auto_delete=True)
+        channel.queue_bind(exchange=exchange, queue=test_queue, routing_key='prospecting.completed')
+
+        event_payload = _build_test_event(event_id=f"dup-{uuid.uuid4()}")
+
+        for _ in range(2):
+            channel.basic_publish(
+                exchange=exchange,
+                routing_key='sourcing.completed',
+                body=json.dumps(event_payload),
+                properties=pika.BasicProperties(
+                    delivery_mode=2,
+                    content_type='application/json',
+                ),
+            )
+
+        received = []
+        start_time = time.time()
+        timeout = 12
+
+        while time.time() - start_time < timeout:
+            method, properties, body = channel.basic_get(queue=test_queue, auto_ack=False)
+            if not method:
+                time.sleep(0.5)
+                continue
+
+            try:
+                data = json.loads(body)
+            except Exception:
+                data = {}
+
+            if data.get('campaign_id') == event_payload['campaign_id']:
+                received.append(data)
+
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+
+            if len(received) > 1:
+                break
+
+        connection.close()
+
+        if len(received) == 1:
+            return True, "Duplicate sourcing.completed event produced exactly one prospecting.completed output"
+        if len(received) > 1:
+            return False, f"Duplicate sourcing.completed event produced {len(received)} prospecting.completed outputs"
+        return False, "Did not receive any prospecting.completed output for duplicate-event test"
+    except Exception as e:
+        return False, f"Duplicate-event idempotency test failed: {str(e)}"
 
 
 def check_queue_depth() -> Tuple[bool, str]:
@@ -143,6 +212,7 @@ def main():
         ("Publish Sourcing Event", publish_sourcing_completed_event),
         ("Check Queue Depth", check_queue_depth),
         ("Monitor Processing", monitor_prospecting_completed_queue),
+        ("Duplicate Event Idempotency", duplicate_event_idempotency_test),
     ]
     
     all_passed = True

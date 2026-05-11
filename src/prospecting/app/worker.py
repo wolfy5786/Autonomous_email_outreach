@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from .contracts import (
@@ -80,13 +81,31 @@ class ProspectingWorker:
         prospects: list[dict[str, Any]] = []
 
         # collect prospect tuples with full scoring metadata
+        # extract event metadata if present for idempotency tracking
+        event_id = None
+        try:
+            event_id = getattr(event, "event_id", None) or msg.get("event_id")
+        except Exception:
+            event_id = None
+
         for c in companies:
             cid = str(c.get("id") or c.get("_id") or "")
             if not cid:
                 continue
             c_score = score_company(c, plan)
 
-            self._mongo.update_company_score(cid, campaign_id, c_score.score, c_score.scoring_version)
+            # persist company-level score with campaign-scoped record
+            company_reasons = {k: v.reason for k, v in c_score.dimension_scores.items()}
+            scored_at = datetime.utcnow().isoformat()
+            self._mongo.update_company_score(
+                cid,
+                campaign_id,
+                c_score.score,
+                c_score.scoring_version,
+                scored_at=scored_at,
+                reasons=company_reasons,
+                event_id=event_id,
+            )
 
             for p in persons_by_company.get(cid, []):
                 pid = str(p.get("id") or p.get("_id") or "")
@@ -95,7 +114,16 @@ class ProspectingWorker:
                 p_score = score_person(p, plan)
                 total = combined_score(c_score, p_score)
 
-                self._mongo.update_person_score(pid, campaign_id, p_score.score, p_score.scoring_version)
+                person_reasons = {k: v.reason for k, v in p_score.dimension_scores.items()}
+                self._mongo.update_person_score(
+                    pid,
+                    campaign_id,
+                    p_score.score,
+                    p_score.scoring_version,
+                    scored_at=scored_at,
+                    reasons=person_reasons,
+                    event_id=event_id,
+                )
                 if p.get("email"):
                     self._mongo.update_person_email_verified(pid, True)
 
@@ -186,5 +214,6 @@ class ProspectingWorker:
             campaign_id=campaign_id,
             ranked_prospects=ranked,
         )
-        return output.model_dump(mode="json", exclude_none=True)
+        # return a python dict so callers (and publisher) can work with structured data
+        return output.model_dump(mode="python", exclude_none=True)
 

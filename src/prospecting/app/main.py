@@ -38,8 +38,34 @@ class AppState:
             logger.info("consuming queue=%s", "sourcing.completed")
 
             def _handler(msg: dict) -> None:
+                # idempotency: skip already-processed events when event_id or idempotency_key is present
+                event_id = None
+                try:
+                    event_id = msg.get("event_id") or msg.get("idempotency_key")
+                except Exception:
+                    event_id = None
+
+                campaign_id = None
+                try:
+                    campaign_id = msg.get("campaign_id")
+                except Exception:
+                    campaign_id = None
+
+                if event_id and self.mongo.is_event_processed(event_id, campaign_id):
+                    logger.info("duplicate sourcing.completed event skipped", extra={"event_id": event_id, "campaign_id": campaign_id})
+                    return
+
                 out = self.worker.handle_sourcing_completed(msg)
+
+                # publish only after DB writes inside the worker have completed
                 self.broker.publish("prospecting.completed", out)
+
+                # mark event processed so repeated messages are idempotent
+                if event_id:
+                    try:
+                        self.mongo.mark_event_processed(event_id, campaign_id, payload=out)
+                    except Exception:
+                        logger.exception("failed marking event processed event_id=%s campaign_id=%s", event_id, campaign_id)
 
             self.broker.consume_forever(queue_name="sourcing.completed", handler=_handler)
 
