@@ -21,6 +21,7 @@ htmlcov/
 .idea/
 .vscode/
 *.swp
+Thumbs.db
 
 # Build
 dist/

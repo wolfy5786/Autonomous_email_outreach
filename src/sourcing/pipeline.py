@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -24,6 +25,9 @@ from cache_check import (
 )
 from discovery import DISCOVERY_SOURCES, DiscoveryContext
 from enrichment import ENRICHMENT_BY_SOURCE_NAME, EnrichmentContext
+from shared.models.company import CompanyRecord, Headquarters
+from shared.models.enums import HintCategory, SourceType
+from shared.models.hint import Hint
 from shared.models.plan import PlanRecord
 from source_map import AttributeSourceMapRule, build_source_map
 from validation.candidate import validate_candidates
@@ -143,9 +147,12 @@ class SourcingPipeline:
         )
 
         raw_candidates = await self._run_discovery(job, plan)
-        await self._validate_candidates_stage(raw_candidates, plan)
+        accepted, _rejected = await self._validate_candidates_stage(raw_candidates, plan)
+        persisted = await self._persist_candidates_stage(accepted, plan, job.campaign_id)
 
-        companies_for_enrichment = self._merge_companies_for_enrichment(disc_cache, src_cache)
+        companies_for_enrichment = self._merge_companies_for_enrichment(
+            disc_cache, src_cache, persisted=persisted
+        )
         await self._run_enrichment(job, plan, source_map, companies_for_enrichment)
         self._validate_enrichment_stage(source_map)
 
@@ -288,19 +295,136 @@ class SourcingPipeline:
             )
             return candidates, []
 
+    async def _persist_candidates_stage(
+        self,
+        accepted: list[dict[str, Any]],
+        plan: PlanRecord,
+        campaign_id: str,
+    ) -> list[CompanyRecord]:
+        """
+        Upsert Tier A candidates as ``CompanyRecord`` rows; attach Tier B candidates as
+        ``Hint`` rows on the matching company. Returns persisted companies for enrichment.
+        """
+        if not accepted:
+            logger.info("stage=persist_candidates campaign_id=%s skipped=empty", campaign_id)
+            return []
+
+        now = datetime.now(timezone.utc)
+        tier_a = [c for c in accepted if (c.get("_discovery_tier") or "") == "A"]
+        tier_b = [c for c in accepted if (c.get("_discovery_tier") or "") == "B"]
+
+        persisted_by_domain: dict[str, CompanyRecord] = {}
+        inserted = 0
+        updated = 0
+        company_errors = 0
+
+        for c in tier_a:
+            domain = c.get("domain")
+            if not isinstance(domain, str) or not domain:
+                continue
+            try:
+                existing = await CompanyRecord.find_one(CompanyRecord.domain == domain)
+                if existing is None:
+                    record = _candidate_to_company_record(c, campaign_id, now)
+                    await record.insert()
+                    persisted_by_domain[domain] = record
+                    inserted += 1
+                else:
+                    if campaign_id not in existing.campaign_ids:
+                        existing.campaign_ids.append(campaign_id)
+                    existing.freshness_timestamp = now
+                    await existing.save()
+                    persisted_by_domain[domain] = existing
+                    updated += 1
+            except Exception as e:
+                company_errors += 1
+                logger.warning(
+                    "stage=persist_company_error campaign_id=%s domain=%s error=%s",
+                    campaign_id, domain, e, exc_info=True,
+                )
+
+        hints_inserted = 0
+        hints_skipped = 0
+        hint_errors = 0
+
+        for c in tier_b:
+            domain = c.get("domain")
+            if not isinstance(domain, str) or not domain:
+                continue
+            try:
+                company = persisted_by_domain.get(domain)
+                if company is None:
+                    company = await CompanyRecord.find_one(CompanyRecord.domain == domain)
+                if company is None:
+                    continue
+
+                source_name = c.get("_discovery_source") or "unknown"
+                source_url = c.get("url") or None
+                dup_query = {
+                    "company_id": company.id,
+                    "source_name": source_name,
+                    "source_url": source_url,
+                }
+                existing_hint = await Hint.find_one(dup_query)
+                if existing_hint is not None:
+                    hints_skipped += 1
+                    continue
+
+                summary = (
+                    c.get("raw_title")
+                    or c.get("name")
+                    or f"signal from {source_name}"
+                )
+                hint = Hint(
+                    company_id=company.id,
+                    campaign_id=campaign_id,
+                    category=HintCategory.PRODUCT_LAUNCH,
+                    summary=summary,
+                    source_name=source_name,
+                    source_type=SourceType.HINT_FEED,
+                    source_url=source_url,
+                    raw_snippet=c.get("raw_title"),
+                )
+                await hint.insert()
+                hints_inserted += 1
+            except Exception as e:
+                hint_errors += 1
+                logger.warning(
+                    "stage=persist_hint_error campaign_id=%s domain=%s error=%s",
+                    campaign_id, domain, e, exc_info=True,
+                )
+
+        logger.info(
+            "stage=persist_candidates campaign_id=%s tier_a_inserted=%s tier_a_updated=%s "
+            "tier_b_hints_inserted=%s tier_b_hints_skipped=%s company_errors=%s hint_errors=%s",
+            campaign_id,
+            inserted,
+            updated,
+            hints_inserted,
+            hints_skipped,
+            company_errors,
+            hint_errors,
+        )
+        return list(persisted_by_domain.values())
+
     def _merge_companies_for_enrichment(
         self,
         disc_cache: DiscoveryCacheResult,
         src_cache: SourcingCacheResult,
+        persisted: list[CompanyRecord] | None = None,
     ) -> list[Any]:
-        """Dedupe companies from discovery + sourcing cache for enrichment attempts."""
+        """Dedupe companies from discovery cache + sourcing cache + freshly-persisted candidates."""
         merged: list[Any] = []
         seen: set[str] = set()
-        for c in disc_cache.companies + src_cache.companies:
-            if c.id in seen:
-                continue
-            seen.add(c.id)
-            merged.append(c)
+        sources: list[list[Any]] = [disc_cache.companies, src_cache.companies]
+        if persisted:
+            sources.append(persisted)
+        for source in sources:
+            for c in source:
+                if c.id in seen:
+                    continue
+                seen.add(c.id)
+                merged.append(c)
         return merged
 
     async def _run_enrichment(
@@ -378,3 +502,48 @@ class SourcingPipeline:
                 "stage=enrichment_validation_not_implemented sample_rule_source=%s",
                 source_map[0].source_name,
             )
+
+
+_EXTRA_KEYS_FROM_CANDIDATE: tuple[str, ...] = (
+    "yc_id",
+    "yc_slug",
+    "yc_batch",
+    "yc_batch_year",
+    "yc_status",
+    "is_b2b_saas",
+    "tags",
+)
+
+
+def _candidate_to_company_record(
+    candidate: dict[str, Any],
+    campaign_id: str,
+    now: datetime,
+) -> CompanyRecord:
+    """Map an accepted Tier A candidate dict to a fresh ``CompanyRecord`` for insert."""
+    hq_data = candidate.get("headquarters") or {}
+    headquarters: Headquarters | None = None
+    if isinstance(hq_data, dict) and (hq_data.get("city") or hq_data.get("country")):
+        headquarters = Headquarters(
+            city=hq_data.get("city") or None,
+            country=hq_data.get("country") or None,
+        )
+
+    extra: dict[str, Any] = {}
+    for key in _EXTRA_KEYS_FROM_CANDIDATE:
+        value = candidate.get(key)
+        if value is not None:
+            extra[key] = value
+
+    return CompanyRecord(
+        name=candidate.get("name") or candidate["domain"],
+        domain=candidate["domain"],
+        industry=candidate.get("industry"),
+        employee_count=candidate.get("employee_count"),
+        headquarters=headquarters,
+        description=candidate.get("description"),
+        website_url=candidate.get("website_url"),
+        campaign_ids=[campaign_id],
+        freshness_timestamp=now,
+        extra=extra,
+    )
