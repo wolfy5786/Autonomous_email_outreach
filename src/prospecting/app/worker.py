@@ -14,6 +14,7 @@ from .contracts import (
     RankedProspect,
     SourcingCompletedEvent,
 )
+from .errors import PermanentProcessingError, RetryableProcessingError
 from .db import Mongo
 from .scoring import combined_score, score_company, score_person
 
@@ -42,13 +43,18 @@ class ProspectingWorker:
         campaign_id = event.campaign_id
         company_ids = [str(x) for x in event.entity_ids if x is not None]
 
+        campaign_doc = self._mongo.get_campaign(campaign_id)
+        campaign = CampaignDocument.model_validate(campaign_doc).model_dump(mode="python") if campaign_doc else None
+        if not campaign:
+            raise PermanentProcessingError(f"campaign not found for campaign_id={campaign_id}")
+
         plan_doc = self._mongo.get_plan(campaign_id=campaign_id)
         plan = PlanDocument.model_validate(plan_doc).model_dump(mode="python") if plan_doc else None
         if not plan:
-            raise RuntimeError(f"plan not found for campaign_id={campaign_id}")
+            if campaign and str(campaign.get("status") or "").lower() in {"draft", "creating", "pending", "initializing"}:
+                raise RetryableProcessingError(f"plan not ready for campaign_id={campaign_id}")
+            raise PermanentProcessingError(f"plan not found for campaign_id={campaign_id}")
 
-        campaign_doc = self._mongo.get_campaign(campaign_id)
-        campaign = CampaignDocument.model_validate(campaign_doc).model_dump(mode="python") if campaign_doc else None
         min_score = self._default_min
         try:
             cfg = (campaign or {}).get("config") or {}

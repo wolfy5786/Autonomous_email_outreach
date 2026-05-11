@@ -128,6 +128,59 @@ def duplicate_event_idempotency_test() -> Tuple[bool, str]:
         return False, f"Duplicate-event idempotency test failed: {str(e)}"
 
 
+def malformed_message_dlq_test() -> Tuple[bool, str]:
+    """Publish malformed JSON and verify it is dead-lettered instead of requeued."""
+    try:
+        url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
+        exchange = os.getenv("RABBITMQ_EXCHANGE", "email_outreach.events")
+        dlq_queue = "sourcing.completed.dlq"
+
+        connection = pika.BlockingConnection(pika.URLParameters(url))
+        channel = connection.channel()
+
+        channel.exchange_declare(exchange=exchange, exchange_type='topic', durable=True, passive=True)
+        channel.queue_declare(queue=dlq_queue, passive=True)
+
+        marker = f"malformed-{uuid.uuid4().hex}"
+        malformed_body = f'{{"campaign_id":"test-campaign-001","marker":"{marker}"'
+
+        channel.basic_publish(
+            exchange=exchange,
+            routing_key='sourcing.completed',
+            body=malformed_body.encode("utf-8"),
+            properties=pika.BasicProperties(
+                delivery_mode=2,
+                content_type='application/json',
+            ),
+        )
+
+        found = False
+        start_time = time.time()
+        timeout = 12
+
+        while time.time() - start_time < timeout:
+            method, properties, body = channel.basic_get(queue=dlq_queue, auto_ack=False)
+            if not method:
+                time.sleep(0.5)
+                continue
+
+            body_text = body.decode("utf-8", errors="ignore") if isinstance(body, (bytes, bytearray)) else str(body)
+            if marker in body_text:
+                found = True
+                channel.basic_ack(delivery_tag=method.delivery_tag)
+                break
+
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+
+        connection.close()
+
+        if found:
+            return True, "Malformed sourcing.completed message was dead-lettered"
+        return False, "Malformed message was not observed in the DLQ"
+    except Exception as e:
+        return False, f"Malformed message DLQ test failed: {str(e)}"
+
+
 def check_queue_depth() -> Tuple[bool, str]:
     """Check the depth of sourcing.completed queue."""
     try:
@@ -213,6 +266,7 @@ def main():
         ("Check Queue Depth", check_queue_depth),
         ("Monitor Processing", monitor_prospecting_completed_queue),
         ("Duplicate Event Idempotency", duplicate_event_idempotency_test),
+        ("Malformed Message DLQ", malformed_message_dlq_test),
     ]
     
     all_passed = True

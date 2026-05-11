@@ -8,6 +8,8 @@ from typing import Any, Callable
 import pika
 from pika.adapters.blocking_connection import BlockingChannel
 
+from .errors import MalformedMessageError, PermanentProcessingError, RetryableProcessingError
+
 
 logger = logging.getLogger(__name__)
 
@@ -57,20 +59,58 @@ class RabbitBroker:
             ),
         )
 
-    def consume_forever(self, queue_name: str, handler: Callable[[dict[str, Any]], None]) -> None:
+    def consume_forever(self, queue_name: str, handler: Callable[[dict[str, Any], Any, Any], None]) -> None:
         if not self._ch:
             raise RuntimeError("broker not connected")
 
-        def _on_message(ch: BlockingChannel, method: Any, _props: Any, body: bytes) -> None:
+        def _retry_count(props: Any) -> int:
+            headers = getattr(props, "headers", None) or {}
+            x_death = headers.get("x-death")
+            if isinstance(x_death, list) and x_death:
+                try:
+                    return int(x_death[0].get("count", 0))
+                except Exception:
+                    return 0
+            for key in ("retry_count", "x-retry-count"):
+                if key in headers:
+                    try:
+                        return int(headers[key])
+                    except Exception:
+                        return 0
+            return 0
+
+        def _message_context(msg: dict[str, Any] | None, props: Any) -> dict[str, Any]:
+            headers = getattr(props, "headers", None) or {}
+            return {
+                "service": "prospecting",
+                "campaign_id": (msg or {}).get("campaign_id"),
+                "event_id": (msg or {}).get("event_id"),
+                "idempotency_key": (msg or {}).get("idempotency_key"),
+                "trace_id": (msg or {}).get("trace_id"),
+                "retry_count": _retry_count(props),
+                "x_death": headers.get("x-death"),
+            }
+
+        def _nack(ch: BlockingChannel, delivery_tag: Any, requeue: bool, msg: dict[str, Any] | None, props: Any, error_type: str, status: str) -> None:
+            logger.error(json.dumps({**_message_context(msg, props), "status": status, "error_type": error_type}, sort_keys=True, separators=(",", ":")))
+            ch.basic_nack(delivery_tag=delivery_tag, requeue=requeue)
+
+        def _on_message(ch: BlockingChannel, method: Any, props: Any, body: bytes) -> None:
+            msg: dict[str, Any] | None = None
             try:
                 msg = json.loads(body.decode("utf-8"))
                 if not isinstance(msg, dict):
-                    raise ValueError("message must be a JSON object")
-                handler(msg)
+                    raise MalformedMessageError("message must be a JSON object")
+                handler(msg, props, method)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
-            except Exception:
-                logger.exception("failed processing message from %s", queue_name)
-                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            except MalformedMessageError as exc:
+                _nack(ch, method.delivery_tag, False, msg, props, type(exc).__name__, "rejected")
+            except PermanentProcessingError as exc:
+                _nack(ch, method.delivery_tag, False, msg, props, type(exc).__name__, "failed")
+            except RetryableProcessingError as exc:
+                _nack(ch, method.delivery_tag, True, msg, props, type(exc).__name__, "retrying")
+            except Exception as exc:
+                _nack(ch, method.delivery_tag, False, msg, props, type(exc).__name__, "failed")
 
         self._ch.basic_consume(queue=queue_name, on_message_callback=_on_message)
         self._ch.start_consuming()
