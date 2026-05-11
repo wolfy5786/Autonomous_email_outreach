@@ -81,3 +81,4 @@ These rules are **non-negotiable**. Follow them on every task, in every language
 <!-- week2: LLM sanitize -->
 <!-- week2: data layer -->
 <!-- week3: contact dedup -->
+<!-- week3: metrics tracking -->
