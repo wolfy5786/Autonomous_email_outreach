@@ -85,7 +85,7 @@ class ProspectingWorker:
                 continue
             c_score = score_company(c, plan)
 
-            self._mongo.update_company_score(cid, campaign_id, c_score)
+            self._mongo.update_company_score(cid, campaign_id, c_score.score, c_score.scoring_version)
 
             for p in persons_by_company.get(cid, []):
                 pid = str(p.get("id") or p.get("_id") or "")
@@ -94,7 +94,7 @@ class ProspectingWorker:
                 p_score = score_person(p, plan)
                 total = combined_score(c_score, p_score)
 
-                self._mongo.update_person_score(pid, campaign_id, p_score)
+                self._mongo.update_person_score(pid, campaign_id, p_score.score, p_score.scoring_version)
                 if p.get("email"):
                     self._mongo.update_person_email_verified(pid, True)
 

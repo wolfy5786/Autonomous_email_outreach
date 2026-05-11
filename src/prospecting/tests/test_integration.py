@@ -24,8 +24,7 @@ def setup_test_data() -> Tuple[bool, str]:
             "name": "Test Campaign",
             "plan_id": "plan-test-campaign-001",
             "config": {
-                "min_icp_score": 0.7,
-                "plan_id": "plan-test-campaign-001"
+                "min_icp_score": 0.7
             },
             "status": "active"
         }
@@ -35,10 +34,24 @@ def setup_test_data() -> Tuple[bool, str]:
         plan_data = {
             "_id": "plan-test-campaign-001",
             "campaign_id": "test-campaign-001",
+            "company_signals": ["industry SaaS", "company size 100-500", "growth hiring"],
+            "poc_signals": ["title CTO", "department engineering", "technical buyer"],
             "scoring_weights": {
-                "title_relevance": 0.4,
-                "company_fit": 0.3,
-                "engagement_score": 0.3
+                "industry_match": 0.25,
+                "company_size_match": 0.1,
+                "funding_stage_match": 0.1,
+                "geography_match": 0.05,
+                "tech_stack_match": 0.1,
+                "growth_signal_match": 0.1,
+                "personalization_signal_match": 0.1,
+                "data_completeness": 0.1,
+                "freshness": 0.1,
+                "title_match": 0.2,
+                "seniority_match": 0.1,
+                "department_match": 0.1,
+                "email_verified": 0.1,
+                "linkedin_present": 0.05,
+                "role_relevance": 0.15
             },
             "company_attributes": {
                 "industry": ["SaaS", "Technology"],
@@ -74,14 +87,18 @@ def setup_test_data() -> Tuple[bool, str]:
                 "name": "Alice Johnson",
                 "title": "CTO",
                 "company_id": "company-test-001",
-                "email": "alice@testcorp.com"
+                "email": "alice@testcorp.com",
+                "email_verified": True,
+                "linkedin_url": "https://linkedin.com/in/alice-johnson"
             },
             {
                 "_id": "person-test-002",
                 "name": "Bob Smith",
                 "title": "VP Engineering",
                 "company_id": "company-test-002",
-                "email": "bob@dataflow.com"
+                "email": "bob@dataflow.com",
+                "email_verified": True,
+                "linkedin_url": "https://linkedin.com/in/bob-smith"
             }
         ]
         for person in persons:
@@ -116,6 +133,8 @@ def verify_scoring_fields() -> Tuple[bool, str]:
                 message += f"  - ICP POC Score: {person_with_score['icp_poc_score']}"
             if "email_verified" in person_with_score:
                 message += f"\n  - Email verified: {person_with_score['email_verified']}"
+            if "scoring_version" in person_with_score:
+                message += f"\n  - Scoring version: {person_with_score['scoring_version']}"
             return True, message
         else:
             return True, "No scored prospects found yet (waiting for message processing)"

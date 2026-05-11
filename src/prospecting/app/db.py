@@ -52,10 +52,7 @@ class Mongo:
 
     def get_plan(self, campaign_id: str) -> dict[str, Any] | None:
         campaign = self.get_campaign(campaign_id)
-        campaign_plan_id = None
-        if campaign:
-            cfg = campaign.get("config") or {}
-            campaign_plan_id = cfg.get("plan_id") or campaign.get("plan_id")
+        campaign_plan_id = campaign.get("plan_id") if campaign else None
         if campaign_plan_id:
             return self.plans.find_one({"id": campaign_plan_id}) or self.plans.find_one({"_id": campaign_plan_id})
         return self.plans.find_one({"campaign_id": campaign_id})
@@ -75,17 +72,17 @@ class Mongo:
             return []
         return list(self.persons.find({"company_id": {"$in": ids}}))
 
-    def update_company_score(self, company_id: str, campaign_id: str, score: float) -> None:
+    def update_company_score(self, company_id: str, campaign_id: str, score: float, scoring_version: str) -> None:
         self.companies.update_one(
             {"$or": [{"id": company_id}, {"_id": company_id}]},
-            {"$set": {"icp_fit_score": score}},
+            {"$set": {"icp_fit_score": score, "scoring_version": scoring_version}},
             upsert=False,
         )
 
-    def update_person_score(self, person_id: str, campaign_id: str, score: float) -> None:
+    def update_person_score(self, person_id: str, campaign_id: str, score: float, scoring_version: str) -> None:
         self.persons.update_one(
             {"$or": [{"id": person_id}, {"_id": person_id}]},
-            {"$set": {"icp_poc_score": score}},
+            {"$set": {"icp_poc_score": score, "scoring_version": scoring_version}},
             upsert=False,
         )
 

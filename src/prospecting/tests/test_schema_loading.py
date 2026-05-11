@@ -28,7 +28,7 @@ def _seed(db) -> None:
             "_id": "campaign-001",
             "name": "Seed Campaign",
             "status": "running",
-            "config": {"min_icp_score": 0.0, "plan_id": "plan-001"},
+            "config": {"min_icp_score": 0.0},
             "plan_id": "plan-001",
         }
     )
@@ -36,7 +36,26 @@ def _seed(db) -> None:
         {
             "_id": "plan-001",
             "campaign_id": "campaign-001",
-            "scoring_weights": {"industry": 0.6, "title": 0.4},
+            "company_signals": ["industry SaaS", "company size 100-500", "growth hiring"],
+            "poc_signals": ["title CTO", "department engineering", "technical buyer"],
+            "scoring_weights": {
+                "industry_match": 0.25,
+                "company_size_match": 0.1,
+                "funding_stage_match": 0.1,
+                "geography_match": 0.05,
+                "tech_stack_match": 0.1,
+                "growth_signal_match": 0.1,
+                "personalization_signal_match": 0.1,
+                "data_completeness": 0.1,
+                "freshness": 0.1,
+                "title_match": 0.2,
+                "seniority_match": 0.1,
+                "department_match": 0.1,
+                "email_verified": 0.1,
+                "linkedin_present": 0.05,
+                "role_relevance": 0.15,
+                "scoring_version": 0.0,
+            },
         }
     )
     db.companies.insert_one(
@@ -94,6 +113,8 @@ def test_schema_and_loading() -> Tuple[bool, str]:
             return False, "person score was not persisted"
         if person.get("email_verified") is not True:
             return False, "person email_verified flag was not updated"
+        if company.get("scoring_version") != "v1" or person.get("scoring_version") != "v1":
+            return False, "scoring version was not persisted"
 
         return True, "Schema validation, Mongo loading, and score persistence all succeeded"
     except Exception as exc:

@@ -40,17 +40,19 @@ def test_sourcing_event_contract() -> Tuple[bool, str]:
         if event.entity_ids != ["company-1", "company-2"]:
             return _fail("entity_ids were not preserved")
 
-        try:
-            SourcingCompletedEvent.model_validate(
-                {
-                    "campaign_id": "campaign-1",
-                    "entity_ids": ["company-1"],
-                    "unexpected": True,
-                }
-            )
-            return _fail("unexpected fields should be rejected")
-        except ValidationError:
-            return _ok("Sourcing event contract enforces the expected shape")
+        event_with_metadata = SourcingCompletedEvent.model_validate(
+            {
+                "campaign_id": "campaign-1",
+                "entity_ids": ["company-1"],
+                "event_id": "evt-internal-1",
+                "trace_id": "trace-internal-1",
+                "idempotency_key": "idemp-internal-1",
+                "scoring_version": 3,
+            }
+        )
+        if event_with_metadata.campaign_id != "campaign-1" or event_with_metadata.entity_ids != ["company-1"]:
+            return _fail("sourcing event metadata handling failed")
+        return _ok("Sourcing event contract enforces the expected shape")
     except Exception as exc:
         return _fail(f"Sourcing event contract failed: {exc}")
 
@@ -71,7 +73,13 @@ def test_mongo_documents_contract() -> Tuple[bool, str]:
             }
         )
         plan = PlanDocument.model_validate(
-            {"_id": "plan-1", "campaign_id": "campaign-1", "scoring_weights": {"industry": 0.7}}
+            {
+                "_id": "plan-1",
+                "campaign_id": "campaign-1",
+                "company_signals": ["industry SaaS", "company size 100-500"],
+                "poc_signals": ["title CTO", "department engineering"],
+                "scoring_weights": {"industry_match": 0.7, "title_match": 0.3},
+            }
         )
 
         if company.id != "company-1" or company.employee_count != 42:
@@ -82,8 +90,12 @@ def test_mongo_documents_contract() -> Tuple[bool, str]:
             return _fail("person document normalization failed")
         if person.email_verified is not True or person.icp_poc_score != 0.71:
             return _fail("person score / verification field normalization failed")
-        if plan.id != "plan-1" or plan.scoring_weights.get("industry") != 0.7:
+        if plan.id != "plan-1" or plan.scoring_weights.get("industry_match") != 0.7:
             return _fail("plan document normalization failed")
+        if plan.company_signals != ["industry SaaS", "company size 100-500"]:
+            return _fail("company signals were not preserved")
+        if plan.poc_signals != ["title CTO", "department engineering"]:
+            return _fail("poc signals were not preserved")
 
         return _ok("Mongo document contracts normalize the expected fields")
     except Exception as exc:

@@ -14,6 +14,8 @@ class ProspectingDocumentBase(BaseModel):
 
 
 class SourcingCompletedEvent(ProspectingEventBase):
+    model_config = ConfigDict(extra="allow", populate_by_name=True, str_strip_whitespace=True)
+
     campaign_id: str
     entity_ids: list[str] = Field(default_factory=list)
 
@@ -25,6 +27,8 @@ class RankedProspect(ProspectingEventBase):
 
 
 class ProspectingCompletedEvent(ProspectingEventBase):
+    model_config = ConfigDict(extra="allow", populate_by_name=True, str_strip_whitespace=True)
+
     campaign_id: str
     ranked_prospects: list[RankedProspect] = Field(default_factory=list)
 
@@ -39,6 +43,8 @@ class CampaignDocument(ProspectingDocumentBase):
 class PlanDocument(ProspectingDocumentBase):
     id: str = Field(validation_alias=AliasChoices("id", "_id"))
     campaign_id: str
+    company_signals: list[str] = Field(default_factory=list)
+    poc_signals: list[str] = Field(default_factory=list)
     scoring_weights: dict[str, float] = Field(default_factory=dict)
 
 
