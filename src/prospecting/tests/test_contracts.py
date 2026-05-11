@@ -108,8 +108,26 @@ def test_output_contract() -> Tuple[bool, str]:
             {
                 "campaign_id": "campaign-1",
                 "ranked_prospects": [
-                    {"company_id": "company-1", "poc_id": "person-1", "score": 0.91},
-                    RankedProspect(company_id="company-2", poc_id="person-2", score=0.75),
+                    {
+                        "rank": 1,
+                        "company_id": "company-1",
+                        "poc_id": "person-1",
+                        "icp_fit_score": 0.8,
+                        "icp_poc_score": 0.7,
+                        "total_score": 0.76,
+                        "scoring_version": "v1",
+                        "scoring_reasons": {"company": {"industry_match": "reason"}, "poc": {"title_match": "reason"}},
+                    },
+                    RankedProspect(
+                        rank=2,
+                        company_id="company-2",
+                        poc_id="person-2",
+                        icp_fit_score=0.75,
+                        icp_poc_score=0.6,
+                        total_score=0.705,
+                        scoring_version="v1",
+                        scoring_reasons={},
+                    ),
                 ],
             }
         )

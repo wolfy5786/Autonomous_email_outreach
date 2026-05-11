@@ -77,8 +77,9 @@ class ProspectingWorker:
                 continue
             persons_by_company.setdefault(str(cid), []).append(p)
 
-        prospects: list[Prospect] = []
+        prospects: list[dict[str, Any]] = []
 
+        # collect prospect tuples with full scoring metadata
         for c in companies:
             cid = str(c.get("id") or c.get("_id") or "")
             if not cid:
@@ -98,12 +99,89 @@ class ProspectingWorker:
                 if p.get("email"):
                     self._mongo.update_person_email_verified(pid, True)
 
-                if total >= min_score:
-                    prospects.append(Prospect(company_id=cid, poc_id=pid, score=total))
+                if total < min_score:
+                    continue
 
-        prospects.sort(key=lambda x: x.score, reverse=True)
+                # extract tie-breaker values
+                company_data_completeness = 0.0
+                try:
+                    company_data_completeness = float(
+                        getattr(c_score.dimension_scores.get("data_completeness"), "score", 0.0)
+                    )
+                except Exception:
+                    company_data_completeness = 0.0
 
-        ranked = [RankedProspect(company_id=p.company_id, poc_id=p.poc_id, score=round(p.score, 6)) for p in prospects]
+                person_email_verified = bool(p.get("email_verified") or (p_score.dimension_scores.get("email_verified") and p_score.dimension_scores.get("email_verified").score > 0))
+
+                freshness_ts = c.get("freshness_timestamp") or 0
+                try:
+                    # numeric timestamps should sort descending; keep raw if numeric
+                    freshness_sort = float(freshness_ts) if isinstance(freshness_ts, (int, float)) else 0
+                except Exception:
+                    freshness_sort = 0
+
+                prospects.append(
+                    {
+                        "company_id": cid,
+                        "poc_id": pid,
+                        "company_score": round(c_score.score, 6),
+                        "person_score": round(p_score.score, 6),
+                        "total_score": round(total, 6),
+                        "scoring_version": c_score.scoring_version or p_score.scoring_version,
+                        "company_data_completeness": float(company_data_completeness),
+                        "person_email_verified": person_email_verified,
+                        "freshness_sort": float(freshness_sort),
+                        "company_reasons": {k: v.reason for k, v in c_score.dimension_scores.items()},
+                        "person_reasons": {k: v.reason for k, v in p_score.dimension_scores.items()},
+                    }
+                )
+
+        # sort using the requested tie-breakers
+        prospects.sort(
+            key=lambda r: (
+                -float(r.get("total_score", 0.0)),
+                -float(r.get("company_data_completeness", 0.0)),
+                -int(bool(r.get("person_email_verified", False))),
+                -float(r.get("freshness_sort", 0.0)),
+                r.get("company_id", ""),
+                r.get("poc_id", ""),
+            )
+        )
+
+        # apply max_drafts if present
+        max_drafts = None
+        try:
+            cfg = (campaign or {}).get("config") or {}
+            if "max_drafts" in cfg:
+                max_drafts = int(cfg["max_drafts"])
+                if max_drafts <= 0:
+                    max_drafts = None
+        except Exception:
+            max_drafts = None
+
+        if max_drafts is not None:
+            prospects = prospects[:max_drafts]
+
+        # build RankedProspect models with rank and reasons summary
+        ranked: list[RankedProspect] = []
+        for idx, r in enumerate(prospects, start=1):
+            reasons = {
+                "company": r.get("company_reasons", {}),
+                "poc": r.get("person_reasons", {}),
+            }
+            ranked.append(
+                RankedProspect(
+                    rank=idx,
+                    company_id=r["company_id"],
+                    poc_id=r["poc_id"],
+                    icp_fit_score=float(r["company_score"]),
+                    icp_poc_score=float(r["person_score"]),
+                    total_score=float(r["total_score"]),
+                    scoring_version=str(r.get("scoring_version") or ""),
+                    scoring_reasons=reasons,
+                )
+            )
+
         output = ProspectingCompletedEvent(
             campaign_id=campaign_id,
             ranked_prospects=ranked,

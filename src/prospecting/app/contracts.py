@@ -21,9 +21,14 @@ class SourcingCompletedEvent(ProspectingEventBase):
 
 
 class RankedProspect(ProspectingEventBase):
+    rank: int
     company_id: str
     poc_id: str
-    score: float = Field(ge=0.0, le=1.0)
+    icp_fit_score: float = Field(ge=0.0, le=1.0)
+    icp_poc_score: float = Field(ge=0.0, le=1.0)
+    total_score: float = Field(ge=0.0, le=1.0)
+    scoring_version: str
+    scoring_reasons: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class ProspectingCompletedEvent(ProspectingEventBase):
