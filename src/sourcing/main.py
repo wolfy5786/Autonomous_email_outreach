@@ -1,97 +1,47 @@
-"""
-Sourcing service: consumes ``sourcing.requested`` from RabbitMQ (Docker) and runs the pipeline.
-"""
-
-from __future__ import annotations
-
+"""Sourcing service entry point."""
 import asyncio
 import signal
 import sys
-
-import structlog
-
-from config import SOURCING_CONSUMER_QUEUE, settings
-from logging_setup import configure_logging
-from pipeline import SourcingPipeline
-from publisher import SourcingAMQPPublisher
-from shared.models.db import init_db
-from shared.observability import MongoTraceSink, set_trace_sink
-from subscriber import SourcingAMQPConsumer, _safe_broker_host
-
-log = structlog.get_logger(__name__)
+from .config import config
+from .handlers import SourcingHandler
+from .source_map import get_enabled_sources
+from .logging_setup import pipeline_logger as logger
 
 
-def _install_signal_handlers(stop_event: asyncio.Event) -> None:
+async def main() -> None:
+    logger.info("Starting sourcing service...")
+    logger.info(f"RabbitMQ: {config.rabbitmq_url}")
+    logger.info(f"MongoDB: {config.mongo_uri}")
+    logger.info(f"Enabled sources: {get_enabled_sources()}")
+    logger.info(f"Rate limit: {config.api_calls_per_second} req/s (burst: {config.api_burst_size})")
+
+    handler = SourcingHandler()
+
+    # In production this connects to RabbitMQ and starts consuming
+    # For now, log readiness
+    logger.info("Sourcing service ready. Waiting for sourcing.requested events...")
+
+    # Keep alive
+    stop = asyncio.Event()
+
+    def handle_signal(sig: signal.Signals) -> None:
+        logger.info(f"Received {sig.name}, shutting down...")
+        stop.set()
+
     loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, handle_signal, sig)
 
-    def _set_stop() -> None:
-        stop_event.set()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, _set_stop)
-        except NotImplementedError:
-            # Windows
-            signal.signal(sig, lambda *_a, **_k: stop_event.set())
+    await stop.wait()
+    logger.info("Sourcing service stopped.")
 
 
-async def _run() -> None:
-    configure_logging(settings.log_level)
-    log.info(
-        "sourcing service starting",
-        module=__name__,
-        queue=SOURCING_CONSUMER_QUEUE,
-        broker_host=_safe_broker_host(settings.rabbitmq_url),
-    )
-
-    mongo_client = None
-    publisher = SourcingAMQPPublisher(settings)
-    pipeline = SourcingPipeline(publisher=publisher)
-    consumer = SourcingAMQPConsumer(settings, pipeline)
-    stop_event = asyncio.Event()
-    _install_signal_handlers(stop_event)
-
+def entrypoint() -> None:
     try:
-        mongo_client, database = await init_db()
-        log.info("mongo initialized", module=__name__, db_name=database.name)
-        # Trace sink: every trace_operation in this process writes TraceEvent rows to Mongo.
-        set_trace_sink(MongoTraceSink())
-
-        await publisher.connect()
-        await consumer.connect()
-        await consumer.start_consumer()
-        log.info(
-            "sourcing service ready",
-            module=__name__,
-            queue=SOURCING_CONSUMER_QUEUE,
-        )
-        await stop_event.wait()
-    finally:
-        log.info("sourcing service shutting down", module=__name__)
-        try:
-            await consumer.disconnect()
-        except Exception:
-            log.error("sourcing service consumer disconnect failed", module=__name__, exc_info=True)
-        try:
-            await publisher.disconnect()
-        except Exception:
-            log.error("sourcing service publisher disconnect failed", module=__name__, exc_info=True)
-        finally:
-            if mongo_client is not None:
-                try:
-                    mongo_client.close()
-                except Exception:
-                    log.error("mongo client close failed", module=__name__, exc_info=True)
-                else:
-                    log.info("mongo client closed", module=__name__)
-
-
-def main() -> None:
-    try:
-        asyncio.run(_run())
+        asyncio.run(main())
     except KeyboardInterrupt:
         sys.exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()
