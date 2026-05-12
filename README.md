@@ -150,7 +150,7 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 - Consume `sourcing.requested` events and merge any Plan-level `search_blocks` from [`planning_service_role.md`](planning_service_role.md).
 - Execute the **cache-first sourcing decision** per company/domain and per POC identity skeleton.
 - Run **Phase 1 discovery** and **Phase 2 enrichment** per `data_sourcing_map.md` (with crawl4ai / LLM extraction, allowed scrapers/APIs).
-- Identify **who** qualifies as a POC from public cues (sites, filings, announcements, NIH PIs, Product Hunt makers, etc.) — **without** invoking commercial email enrichment APIs here.
+- Identify **who** qualifies as a POC from public cues (sites, filings, announcements, Product Hunt makers, etc.) — **without** invoking commercial email enrichment APIs here.
 - Normalize + persist **`company_record`**, POC documents, **`hints`**, provenance payloads in MongoDB; publish `sourcing.completed` / `sourcing.partial`.
 
 **Does not:** Run Apollo/Hunter email waterfalls, compute ICP scores, or gate prospects for Messaging.
@@ -268,7 +268,7 @@ per data sourcing map tiers       vs freshness_budget
 `data_sourcing_map.md` is authoritative; Sourcing mechanically mirrors its stages:
 
 **Phase 1 — discovery (validated company enumeration)**  
-Tier A directories (examples): Y Combinator roster, Product Hunt launches, NIH Reporter (healthcare spins), Open Corporates registry API (entity resolution and validation). Tier B *hints only* feed raw leads (HN Show HN/job threads, public LinkedIn company surfaces) → must pass deterministic validation gates before enrichment spend.
+Tier A directories (examples): Y Combinator roster, Product Hunt launches, Open Corporates registry API (entity resolution and validation). Tier B *hints only* feed raw leads (HN Show HN/job threads, public LinkedIn company surfaces) → must pass deterministic validation gates before enrichment spend.
 
 **Phase 2 — enrichment (known domains only)**  
 - crawl4ai (or equivalents) → markdown → LLM JSON for corporate sites/blogs/`/careers` + ATS embeds  
@@ -290,7 +290,6 @@ The table summarizes the same catalogue as **`data_sourcing_map.md`** (see that 
 | Y Combinator companies | Discovery / validation | Canonical startup domains + narratives | SW + HC |
 | Open Corporates | Discovery + validation / enrichment | Legal entity metadata, officers, jurisdiction, active status | SW + HC |
 | Product Hunt | Discovery | Recent launches & maker metadata | SW |
-| NIH Reporter | Discovery | NIH-funded institution spinouts | HC |
 | Hacker News (Algolia) | Hint feed | Announcements/job threads needing validation | SW |
 | LinkedIn (public listings) | Hint + enrichment | Employee bands, HQ clarity | SW + HC |
 | Company websites & blogs | Enrichment | Product story, personalization hooks | SW + HC |

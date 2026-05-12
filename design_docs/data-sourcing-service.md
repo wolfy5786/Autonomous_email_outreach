@@ -28,7 +28,7 @@ Implementation-oriented design for the **Sourcing** service: validated discovery
 - Build an **attribute-to-source map** before calling external systems.
 - **Company discovery:** validated candidate domains from Tier A directories and Tier B hints (validated before enrichment spend).
 - **Company enrichment:** fill `company_record` fields and `extra` from approved sources (web, careers, filings, SERP scoped to known companies, etc.).
-- **POC identity:** identify plausible contacts from public sources permitted by policy (sites, announcements, NIH PIs, Product Hunt makers, etc.) and persist `persons` skeletons linked to companies — **without** Apollo/Hunter email waterfall.
+- **POC identity:** identify plausible contacts from public sources permitted by policy (sites, announcements, Product Hunt makers, etc.) and persist `persons` skeletons linked to companies — **without** Apollo/Hunter email waterfall.
 - Normalize output, attach **provenance**, compute **data completeness**, emit `sourcing.completed` / `sourcing.partial`.
 
 **Out of scope (belongs to Prospecting)**
@@ -91,7 +91,7 @@ Optional extension for observability (if all consumers tolerate extra keys):
 1. **Load plan** — Fetch `plan_record` / Plan Document by `plan_id`; read `company_signals`, `poc_signals`, `personalization_hooks`, **`search_blocks` / sourcing config** ([`planning_service_role.md`](../planning_service_role.md)), and campaign flags.
 2. **Cache check** — For each candidate or seed entity, apply the **cache-first** rules from [README.md](../README.md) (no data → scrape all; partial → gap fill; fresh + complete → no scrape).
 3. **Build attribute source map** — Deterministic map from requested attributes → sources, templates, schemas, fallbacks ([§5](#5-attribute-source-map)); align sources with [`data_sourcing_map.md`](../data_sourcing_map.md).
-4. **Company discovery** — Tier A directories (YC, Crunchbase, Product Hunt; NIH Reporter for HC) plus Tier B hints (HN, public LinkedIn company pages) validated before enrichment ([`data_sourcing_map.md`](../data_sourcing_map.md)).
+4. **Company discovery** — Tier A directories (YC, Crunchbase, Product Hunt) plus Tier B hints (HN, public LinkedIn company pages) validated before enrichment ([`data_sourcing_map.md`](../data_sourcing_map.md)).
 5. **Candidate validation** — Relevance, deduplication, domain sanity, blocklists ([§8](#8-validation-gates-and-failure-modes)).
 6. **Company enrichment** — Website/blog + careers pipelines (crawl4ai + LLM), targeted filings (e.g. SEC Form D), OpenCorporates, SERP anchored to `(name, domain)` only ([§6](#6-source-catalog-and-usage-rules)).
 7. **POC identity mining** — Public sources only — fill names/titles/URLs per `poc_signals` without commercial email enrichment.

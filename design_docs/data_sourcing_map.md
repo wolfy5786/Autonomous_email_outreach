@@ -26,17 +26,6 @@ The pipeline has two distinct phases that run sequentially. Discovery produces a
 
 ---
 
-### Tier A — Domain-Specific Directories
-
-| Source | URL | Access | Cost | Key Fields | Domains | Priority |
-|---|---|---|---|---|---|---|
-| NIH Reporter | reporter.nih.gov | Free REST API — no key required | Free | PI, institution, project title, abstract, funding amount, keywords | HC | Primary |
-
-**Usage notes:**
-- **NIH Reporter:** Overlaps with SBIR but also surfaces academic spinouts. Use project abstracts to score ICP relevance via LLM.
-
----
-
 ### Tier B — Signal Sources (candidate extraction only, not clean lists)
 
 > These sources output candidate names and URLs that must be validated against a Tier A source before enrichment begins.
@@ -87,14 +76,9 @@ The pipeline has two distinct phases that run sequentially. Discovery produces a
 
 ## Fallback Chains
 
-### Startup discovery — software
+### Startup discovery
 ```
 YC directory  →  ProductHunt  →  HN Show HN
-```
-
-### Startup discovery — healthcare
-```
-NIH Reporter  →  YC 
 ```
 
 ### Funding signal enrichment
@@ -118,14 +102,14 @@ Website crawl + LLM  →  Job posts (stack hints in JDs)
 
 **Phase separation is intentional.** Discovery and enrichment are separate pipelines with a validation gate between them. Any candidate from a Tier B signal source must be cross-checked against a Tier A source before enrichment begins. This prevents wasting crawl and LLM cost on false positives.
 
-**LLM extraction targets:** Company website markdown, career page JDs, NIH Reporter abstracts, SERP snippets. Use a low-cost model (e.g. Haiku or local LLM) for bulk extraction with a structured JSON schema or short summary for news posts. Cache all markdown outputs with a 30-day TTL.
+**LLM extraction targets:** Company website markdown, career page JDs, SERP snippets. Use a low-cost model (e.g. Haiku or local LLM) for bulk extraction with a structured JSON schema or short summary for news posts. Cache all markdown outputs with a 30-day TTL.
 
 **Rate limit defaults:**
 - LinkedIn: max 1 request / 10 seconds, rotate user agents
 - Open Corporates API: stay within the free-tier daily request quota (confirm on opencorporates.com)
 - SerpAPI free: 100 searches/month — batch wisely
 
-**Service boundary:** **Sourcing** discovers company domains, enriches company records, and identifies **who** qualifies as a POC using public titles, names, and profile URLs (e.g. leadership pages, makers, NIH PIs). **Prospecting** handles **commercial email discovery and verification** (e.g. Apollo.io, Hunter.io), ICP scoring, ranking, and thresholding before messaging.
+**Service boundary:** **Sourcing** discovers company domains, enriches company records, and identifies **who** qualifies as a POC using public titles, names, and profile URLs (e.g. leadership pages, makers). **Prospecting** handles **commercial email discovery and verification** (e.g. Apollo.io, Hunter.io), ICP scoring, ranking, and thresholding before messaging.
 
 ---
 
@@ -136,7 +120,6 @@ Website crawl + LLM  →  Job posts (stack hints in JDs)
 | Y Combinator | Discovery | SW + HC | HTML scrape | Free |
 | Open Corporates | Discovery + Enrichment | SW + HC | REST API | Free (limited) |
 | Product Hunt | Discovery | SW | API | Free |
-| NIH Reporter | Discovery | HC | REST API | Free |
 | Hacker News | Discovery (signals) | SW | Algolia API | Free |
 | LinkedIn | Discovery (signals) + Enrichment | SW + HC | HTML scrape | Free |
 | Company website | Enrichment | SW + HC | crawl4ai | LLM cost only |
