@@ -47,8 +47,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
       POSTGRES_DB: ${POSTGRES_DB:-email_outreach}
-    ports:
-      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    # No host port binding by default — orchestrator (when running) reaches
+    # postgres at postgres:5432 inside the docker network. Uncomment to expose
+    # for local psql/GUI access:
+    # ports:
+    #   - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -116,6 +119,36 @@ services:
       MONGO_DB_NAME: email_outreach
     ports:
       - "8081:8081"
+    restart: unless-stopped
+
+  prospecting:
+    build:
+      context: ./src
+      dockerfile: prospecting/Dockerfile
+    container_name: email-outreach-prospecting
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: email_outreach.events
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: email_outreach
+      WAIT_FOR_DEPS: "true"
+      STARTUP_RETRIES: "45"
+      STARTUP_SLEEP_SECONDS: "2"
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "8004"
+      LOG_LEVEL: INFO
+    ports:
+      - "8004:8004"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
     restart: unless-stopped
 
   observability:

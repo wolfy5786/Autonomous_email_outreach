@@ -85,6 +85,33 @@ class SourcingPipeline:
         self._publisher = publisher
 
     async def run(self, body: bytes) -> None:
+        # Extract trace context BEFORE wrapping in trace_operation so the
+        # span carries the right ids. Falls back to a fresh trace_id when the
+        # incoming message has none.
+        import uuid as _uuid
+
+        from shared.observability import trace_operation as _trace_operation
+
+        trace_id: str = str(_uuid.uuid4())
+        campaign_id: str | None = None
+        try:
+            peek = json.loads(body.decode("utf-8"))
+            if isinstance(peek, dict):
+                trace_id = peek.get("trace_id") or trace_id
+                campaign_id = peek.get("campaign_id")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass  # pipeline body parsing below logs the same error
+
+        async with _trace_operation(
+            trace_id=trace_id,
+            campaign_id=campaign_id,
+            service="sourcing",
+            event_name="sourcing.requested.consume",
+            metadata={"queue": "sourcing.requested"},
+        ):
+            await self._run_inner(body)
+
+    async def _run_inner(self, body: bytes) -> None:
         logger.info(
             "stage=message_received bytes=%s",
             len(body),

@@ -11,6 +11,8 @@ from pika.exceptions import AMQPError
 from pymongo.errors import PyMongoError
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 
+from shared.observability import configure_logging
+
 from .broker import BrokerConfig, RabbitBroker
 from .config import Settings
 from .db import Mongo, MongoConfig
@@ -18,10 +20,8 @@ from .errors import PermanentProcessingError, RetryableProcessingError
 from .worker import ProspectingWorker
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+# Replaces logging.basicConfig — structlog → JSON, stamps service/env on every line.
+configure_logging(service="prospecting")
 logger = logging.getLogger("prospecting")
 
 

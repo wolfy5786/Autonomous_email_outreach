@@ -7,3 +7,5 @@ pydantic-settings==2.4.0
 python-dotenv==1.0.1
 requests==2.31.0
 prometheus-client==0.20.0
+# Structured logging via shared.observability (configure_logging)
+structlog>=24.4,<25

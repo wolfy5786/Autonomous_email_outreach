@@ -1,6 +1,7 @@
+import uuid
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 import structlog
 import uvicorn
@@ -8,6 +9,7 @@ from fastapi import FastAPI, Response
 
 from local_infrastructure.factory.broker_factory import create_broker
 from shared.models import init_db
+from shared.observability import MongoTraceSink, set_trace_sink, trace_operation
 
 from .config import settings
 from .credentials import (
@@ -56,12 +58,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         database_name=settings.mongo_db,
     )
     repo = MessagingRepository(db)
+    # Trace sink: every trace_operation in this process writes TraceEvent rows to Mongo.
+    set_trace_sink(MongoTraceSink())
 
     credentials = _build_credentials()
     provider = create_provider()
     broker = create_broker()
 
-    handler = partial(
+    inner_handler = partial(
         handle_messaging_requested,
         repo=repo,
         llm_fn=generate_draft,
@@ -70,7 +74,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         broker=broker,
         settings=settings,
     )
-    await broker.subscribe(settings.messaging_requested_queue, handler)
+
+    async def traced_handler(msg: dict[str, Any]) -> None:
+        """Wrap the real handler with START/END/ERROR trace events."""
+        trace_id = msg.get("trace_id") or str(uuid.uuid4())
+        campaign_id = msg.get("campaign_id")
+        async with trace_operation(
+            trace_id=trace_id,
+            campaign_id=campaign_id,
+            service="messaging",
+            event_name="messaging.requested.consume",
+            metadata={"queue": settings.messaging_requested_queue},
+        ):
+            await inner_handler(msg)
+
+    await broker.subscribe(settings.messaging_requested_queue, traced_handler)
     log.info("subscribed to queue", queue=settings.messaging_requested_queue)
 
     app.state.repo = repo

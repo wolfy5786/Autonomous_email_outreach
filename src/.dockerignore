@@ -1,0 +1,30 @@
+# Skip dev-only artifacts when building service images from this context.
+
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/dist
+**/.vite
+**/.next
+**/.turbo
+
+# Build artifacts
+**/*.tsbuildinfo
+**/*.pyc
+**/*.pyo
+
+# Tests' own dev artifacts
+**/.coverage
+**/htmlcov
+
+# Editor / OS
+**/.DS_Store
+**/.idea
+**/.vscode
+
+# Secrets / local env
+**/.env
+!**/.env.example

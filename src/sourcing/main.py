@@ -15,6 +15,7 @@ from logging_setup import configure_logging
 from pipeline import SourcingPipeline
 from publisher import SourcingAMQPPublisher
 from shared.models.db import init_db
+from shared.observability import MongoTraceSink, set_trace_sink
 from subscriber import SourcingAMQPConsumer, _safe_broker_host
 
 log = structlog.get_logger(__name__)
@@ -53,6 +54,8 @@ async def _run() -> None:
     try:
         mongo_client, database = await init_db()
         log.info("mongo initialized", module=__name__, db_name=database.name)
+        # Trace sink: every trace_operation in this process writes TraceEvent rows to Mongo.
+        set_trace_sink(MongoTraceSink())
 
         await publisher.connect()
         await consumer.connect()

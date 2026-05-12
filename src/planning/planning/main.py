@@ -1,10 +1,15 @@
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import partial
+from typing import Any
 
 import structlog
 import uvicorn
 from fastapi import FastAPI, Response
+
+from shared.models.db import init_db
+from shared.observability import MongoTraceSink, set_trace_sink, trace_operation
 
 from .config import settings
 from .handlers import handle_plan_requested
@@ -33,24 +38,50 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     repo = PlanRepository(settings.mongo_url, settings.mongo_db)
     await repo.bootstrap_indexes()
 
+    # Beanie init for shared models (registers TraceEvent collection). Opens a
+    # second Motor client to the same Mongo as the repo — wasteful but keeps
+    # the two access paths (Motor-direct vs Beanie) cleanly separated.
+    mongo_client_beanie, _ = await init_db(settings.mongo_url, settings.mongo_db)
+    set_trace_sink(MongoTraceSink())
+
     amqp = PlanningAMQPClient(settings)
     await amqp.connect()
-    handler = partial(handle_plan_requested, repo=repo, llm_fn=generate_plan, publisher=amqp)
-    await amqp.start_consumer(handler)
+    inner_handler = partial(handle_plan_requested, repo=repo, llm_fn=generate_plan, publisher=amqp)
+
+    async def traced_handler(msg: dict[str, Any]) -> None:
+        """Wrap the real handler with START/END/ERROR trace events."""
+        trace_id = msg.get("trace_id") or str(uuid.uuid4())
+        campaign_id = msg.get("campaign_id")
+        async with trace_operation(
+            trace_id=trace_id,
+            campaign_id=campaign_id,
+            service="planning",
+            event_name="plan.requested.consume",
+            metadata={"queue": settings.plan_requested_queue},
+        ):
+            await inner_handler(msg)
+
+    await amqp.start_consumer(traced_handler)
     log.info("subscribed to queue", module=__name__, queue=settings.plan_requested_queue)
 
     app.state.repo = repo
     app.state.amqp_client = amqp
+    app.state.mongo_client_beanie = mongo_client_beanie
     try:
         yield
     finally:
         log.info("planning service shutting down", module=__name__)
+        set_trace_sink(None)
         try:
             await amqp.disconnect()
         except Exception:
             log.error("planning service amqp disconnect failed", module=__name__, exc_info=True)
         finally:
             await repo.close()
+            try:
+                mongo_client_beanie.close()
+            except Exception:
+                log.error("beanie mongo client close failed", module=__name__, exc_info=True)
 
 
 app = FastAPI(title="Planning Service", lifespan=lifespan)

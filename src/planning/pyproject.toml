@@ -16,6 +16,7 @@ dependencies = [
     "uvicorn[standard]>=0.30,<1",
     "tenacity>=9.0,<10",
     "structlog>=24.4,<25",
+    "beanie>=1.26,<2",
 ]
 
 [project.optional-dependencies]

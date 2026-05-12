@@ -22,7 +22,8 @@ RUN pip install --no-cache-dir \
       "fastapi>=0.115,<1" \
       "uvicorn[standard]>=0.30,<1" \
       "tenacity>=9.0,<10" \
-      "structlog>=24.4,<25"
+      "structlog>=24.4,<25" \
+      "beanie>=1.26,<2"
 
 # ── runtime ──────────────────────────────────────────────
 FROM python:3.11-slim-bookworm
@@ -38,8 +39,9 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Service package layout: /app/planning/...
+# Service package layout: /app/planning/... + /app/shared/... (for shared.observability)
 COPY src/planning/planning /app/planning
+COPY src/shared /app/shared
 
 USER app
 EXPOSE 8080
