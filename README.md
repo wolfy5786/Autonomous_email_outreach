@@ -240,3 +240,68 @@ docker compose ps
 - [Cloud Infrastructure](design_docs/cloud_INFRASTRUCTURE.md)
 - [Planning Service Role](design_docs/planning_service_role.md)
 - [Repository Structure](design_docs/Repository_structure.md)
+
+## Cloud-Native Architecture (AWS / Kubernetes / Terraform)
+
+The system is designed and architected for production-grade cloud-native deployment on Amazon EKS. The local Docker Compose deployment on Azure VM mirrors this architecture at a smaller scale.
+
+### Infrastructure as Code with Terraform
+
+The cloud infrastructure is managed using Terraform (`cloud_terraform/`), which provisions and maintains all AWS resources declaratively:
+
+- **VPC** with public and private subnets across availability zones
+- **Amazon EKS** cluster with managed node groups
+- **Three node groups**: general workloads, scraping workloads (memory-heavy for crawl4ai/Playwright), and stateful workloads (MongoDB)
+- **ECR repositories** for storing Docker images for each service
+- **AWS Secrets Manager** for API keys, OAuth credentials, and database passwords
+- **IAM roles and IRSA** (IAM Roles for Service Accounts) for least-privilege service permissions
+- **S3 backup buckets** for MongoDB snapshots
+- **CloudWatch Log Groups** for centralized log aggregation
+- **AWS Network Load Balancer** for public ingress
+
+### Kubernetes Deployment on Amazon EKS
+
+Each microservice is deployed as a Kubernetes Deployment with resource requests/limits, liveness and readiness probes, and environment variables injected from Kubernetes Secrets (via External Secrets Operator).
+
+| Service | K8s Resource Type | Node Group |
+|---------|------------------|------------|
+| Orchestrator | Deployment | General |
+| Planning | Deployment + KEDA ScaledObject | General |
+| Sourcing | Deployment + KEDA ScaledObject | Scraping (isolated) |
+| Prospecting | Deployment + KEDA ScaledObject | General |
+| Messaging | Deployment + KEDA ScaledObject | General |
+| Web UI | Deployment + HPA | General |
+| MongoDB | StatefulSet + PVC (EBS) | Stateful (isolated) |
+| RabbitMQ | StatefulSet | General |
+| PostgreSQL | StatefulSet + PVC (EBS) | Stateful (isolated) |
+| Observability | Deployment | General |
+
+### Autoscaling with KEDA
+
+KEDA (Kubernetes Event-Driven Autoscaler) scales the four worker services based on RabbitMQ queue depth rather than CPU usage — the correct scaling signal for asynchronous workflows. When campaigns are created and messages pile up, KEDA automatically increases replicas to process the backlog, then scales back down once the queue drains.
+
+### Service Mesh with Linkerd
+
+Linkerd provides automatic mTLS between all pods (zero-config encryption for internal traffic), per-service latency P50/P95/P99 metrics, real-time success rate monitoring, and request rate dashboards showing pipeline throughput.
+
+### Observability Stack
+
+- **Prometheus + Grafana**: In-cluster metrics — RabbitMQ queue depths, service pod counts, KEDA scaling events, MongoDB connection pool, node resource utilization
+- **CloudWatch Logs + Fluent Bit**: DaemonSet collecting structured JSON logs from all containers, shipped to CloudWatch Log Groups
+- **RabbitMQ Management**: Built-in queue depth monitoring with DLQ alerts
+
+### CI/CD Pipeline
+
+On push to main branch, GitHub Actions triggers: build → test → push Docker images to ECR → validate Helm charts → deploy to EKS via `helm upgrade --install` → Terraform apply for infrastructure changes. Rolling updates ensure zero-downtime deployments.
+
+### Docker Compose vs Kubernetes Mapping
+
+| Docker Compose | Kubernetes Equivalent |
+|---------------|----------------------|
+| container + image | Deployment + container spec |
+| env_file / environment | Secret + ConfigMap (via ESO) |
+| depends_on + healthcheck | readinessProbe + livenessProbe |
+| volumes | PersistentVolumeClaim (EBS) |
+| ports | Service (ClusterIP / LoadBalancer) |
+| docker compose scale | KEDA ScaledObject |
+| restart: always | restartPolicy: Always |
