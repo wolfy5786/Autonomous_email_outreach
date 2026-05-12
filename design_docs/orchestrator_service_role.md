@@ -176,3 +176,23 @@ The Orchestrator **consumes** these queues to advance or reconcile pipeline stat
 | [`Repository_structure.md`](Repository_structure.md) | `src/orchestrator/` as the code home for this service |
 | [`cloud_INFRASTRUCTURE.md`](cloud_INFRASTRUCTURE.md) | K8s service DNS, ingress for `/api/*`, scaling notes |
 | [`definitions.json`](../src/local_infrastructure/rabbit_mq/definitions.json) | Exchange, queue, DLQ, and binding definitions |
+
+## Pipeline Stage Lifecycle
+
+The orchestrator manages the following stage transitions:
+
+1. **CREATED** → POST /api/campaigns triggers plan.requested
+2. **PLANNING** → Waiting for plan.ready from planning service
+3. **PLAN_READY** → Automatically triggers sourcing.requested
+4. **SOURCING** → Waiting for sourcing.completed (retries on failure up to 3x)
+5. **PROSPECTING** → Waiting for prospecting.completed
+6. **MESSAGING** → Drafts generated and queued for send
+7. **COMPLETED** → All emails sent successfully
+
+Side states: **PAUSED** (user-triggered), **CANCELLED** (user-triggered), **SOURCING_FAILED** (after 3 retries)
+
+## Error Recovery
+
+- sourcing.failed events trigger automatic retry with exponential backoff
+- messaging.failed events re-queue individual drafts up to 3 times
+- All transitions are logged in the audit_log table for debugging
