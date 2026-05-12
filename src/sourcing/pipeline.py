@@ -29,6 +29,7 @@ from shared.models.company import CompanyRecord, Headquarters
 from shared.models.enums import HintCategory, SourceType
 from shared.models.hint import Hint
 from shared.models.plan import PlanRecord
+from publisher import SourcingAMQPPublisher
 from source_map import AttributeSourceMapRule, build_source_map
 from validation.candidate import validate_candidates
 from validation.enrichment import validate_enrichment
@@ -78,6 +79,9 @@ class SourcingRequestedJob(BaseModel):
 
 class SourcingPipeline:
     """Orchestrates logged stages for the first pipeline slice."""
+
+    def __init__(self, publisher: SourcingAMQPPublisher | None = None) -> None:
+        self._publisher = publisher
 
     async def run(self, body: bytes) -> None:
         logger.info(
@@ -163,6 +167,39 @@ class SourcingPipeline:
             job.plan_id,
             job.request_id,
         )
+
+        await self._publish_completed(job, persisted, companies_for_enrichment)
+
+    async def _publish_completed(
+        self,
+        job: SourcingRequestedJob,
+        persisted: list[CompanyRecord],
+        companies_for_enrichment: list[Any],
+    ) -> None:
+        if self._publisher is None:
+            logger.debug(
+                "stage=publish_completed_skipped reason=no_publisher campaign_id=%s",
+                job.campaign_id,
+            )
+            return
+
+        payload = {
+            "campaign_id": job.campaign_id,
+            "plan_id": job.plan_id,
+            "request_id": job.request_id,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "companies_persisted": len(persisted),
+            "companies_enriched": len(companies_for_enrichment),
+        }
+        try:
+            await self._publisher.publish_completed(payload)
+        except Exception as e:
+            logger.warning(
+                "stage=publish_completed_failed campaign_id=%s error=%s",
+                job.campaign_id,
+                e,
+                exc_info=True,
+            )
 
     async def _discovery_cache(
         self,

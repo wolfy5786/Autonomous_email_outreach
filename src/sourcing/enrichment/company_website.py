@@ -1,21 +1,19 @@
-"""Company website + blog — crawl4ai → markdown → LLM extraction."""
+"""Operation 3: Company website landing-page extraction.
+
+See ``design_docs/enrichment_redesign.md`` §3. Not implemented in this session.
+"""
 
 from __future__ import annotations
 
-from enrichment.base import EnrichmentContext, EnrichmentResult, EnrichmentSource
+from enrichment.base import EnrichmentContext, EnrichmentOperation, OperationResult
 
 
-class CompanyWebsiteEnrichment(EnrichmentSource):
-    """
-    Primary web enrichment: product description, ICP signals, pricing hints, tech, announcements.
+class CompanyWebsiteExtraction(EnrichmentOperation):
+    operation_name = "company_website"
 
-    Cache markdown per domain (TTL ~30 days per map).
-    """
-
-    source_name = "company_website"
-
-    async def enrich(self, ctx: EnrichmentContext) -> EnrichmentResult:
+    async def run(self, ctx: EnrichmentContext) -> OperationResult:
         raise NotImplementedError(
-            "CompanyWebsiteEnrichment.enrich: crawl4ai fetch homepage/blog; LLM extract to schema; "
-            "attach evidence_urls and AttributeProvenance per field."
+            "CompanyWebsiteExtraction.run: SERP fallback to find URL → crawl4ai "
+            "landing page only (no link-following) → LLM extract "
+            "company_summary, value_props, signals. Drop on login wall."
         )

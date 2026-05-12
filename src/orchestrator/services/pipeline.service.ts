@@ -7,14 +7,11 @@ import {
   SourcingCompletedPayload,
   SourcingPartialPayload,
   ProspectingCompletedPayload,
-  MessagingCompletedPayload,
-  ReviewCompletedPayload,
-  SendCompletedPayload,
-  SendFailedPayload,
   CampaignStats,
   PipelineStage,
 } from '../../shared/types';
 import { config } from '../config';
+import type { DraftWrittenPayload, DraftFailedPayload } from '../types/queue-payloads';
 
 /**
  * PipelineService coordinates the entire campaign lifecycle.
@@ -45,20 +42,12 @@ export class PipelineService {
       this.onProspectingCompleted(msg as ProspectingCompletedPayload)
     );
 
-    await this.broker.subscribe('messaging.completed', (msg) =>
-      this.onMessagingCompleted(msg as MessagingCompletedPayload)
+    await this.broker.subscribe('draft.written', (msg) =>
+      this.onDraftWritten(msg as DraftWrittenPayload)
     );
 
-    await this.broker.subscribe('review.completed', (msg) =>
-      this.onReviewCompleted(msg as ReviewCompletedPayload)
-    );
-
-    await this.broker.subscribe('send.completed', (msg) =>
-      this.onSendCompleted(msg as SendCompletedPayload)
-    );
-
-    await this.broker.subscribe('send.failed', (msg) =>
-      this.onSendFailed(msg as SendFailedPayload)
+    await this.broker.subscribe('draft.failed', (msg) =>
+      this.onDraftFailed(msg as DraftFailedPayload)
     );
 
     console.log('[PipelineService] Listening on all downstream queues.');
@@ -104,8 +93,6 @@ export class PipelineService {
     campaign.pipeline_state.plan_id = plan_id;
     await this.advanceStage(campaign, 'sourcing');
 
-    // Fan out sourcing requests — the Planning Service determined targets,
-    // but for now the orchestrator publishes a single sourcing event.
     // Target entities would come from the plan; using campaign_id as placeholder.
     await this.broker.publish('sourcing.requested', {
       campaign_id,
@@ -124,8 +111,13 @@ export class PipelineService {
     campaign.pipeline_state.sourced_entity_ids.push(...entity_ids);
     await this.advanceStage(campaign, 'prospecting');
 
-    // Prospecting Service listens directly on sourcing.completed,
-    // so no additional publish is needed here.
+    const plan_id = campaign.pipeline_state.plan_id ?? campaign.plan_id ?? '';
+    await this.broker.publish('prospecting.requested', {
+      campaign_id,
+      plan_id,
+      entity_ids: [...campaign.pipeline_state.sourced_entity_ids],
+    });
+    console.log(`[PipelineService] prospecting.requested for campaign ${campaign_id}`);
   }
 
   private async onSourcingPartial(payload: SourcingPartialPayload): Promise<void> {
@@ -135,7 +127,6 @@ export class PipelineService {
     );
 
     // Log partial sourcing — don't block pipeline but track it.
-    // Could trigger a Layer 2 retry or manual review flag.
   }
 
   private async onProspectingCompleted(payload: ProspectingCompletedPayload): Promise<void> {
@@ -167,72 +158,40 @@ export class PipelineService {
     );
   }
 
-  private async onMessagingCompleted(payload: MessagingCompletedPayload): Promise<void> {
+  private async onDraftWritten(payload: DraftWrittenPayload): Promise<void> {
     const { campaign_id, draft_id } = payload;
-    console.log(`[PipelineService] messaging.completed — draft ${draft_id}`);
+    console.log(`[PipelineService] draft.written — draft ${draft_id}`);
 
     const campaign = await this.findCampaign(campaign_id);
-    if (!campaign) return;
+    if (!campaign || campaign.status === 'paused') return;
 
     campaign.pipeline_state.draft_ids.push(draft_id);
-
-    // Check if all messaging is done → move to review stage
-    if (
-      campaign.pipeline_state.draft_ids.length >=
-      campaign.pipeline_state.ranked_prospect_ids.length
-    ) {
-      await this.advanceStage(campaign, 'review');
-      campaign.status = 'review';
-    }
-
-    await campaign.save();
+    await this.checkMessagingTerminal(campaign);
   }
 
-  private async onReviewCompleted(payload: ReviewCompletedPayload): Promise<void> {
-    const { draft_id, decision } = payload;
-    console.log(`[PipelineService] review.completed — draft ${draft_id}: ${decision}`);
-
-    // If approved, the Review Service already published send.requested.
-    // If rejected, a regeneration may have been published as messaging.requested.
-    // The orchestrator simply tracks the decision for stats.
-  }
-
-  private async onSendCompleted(payload: SendCompletedPayload): Promise<void> {
-    const { draft_id, message_id, sent_at } = payload;
-    console.log(`[PipelineService] send.completed — draft ${draft_id}`);
-
-    // Find the campaign that owns this draft and update state
-    const campaigns = await Campaign.find({
-      'pipeline_state.draft_ids': draft_id,
-    });
-
-    for (const campaign of campaigns) {
-      campaign.pipeline_state.sent_draft_ids.push(draft_id);
-      await this.checkCompletion(campaign);
-    }
-  }
-
-  private async onSendFailed(payload: SendFailedPayload): Promise<void> {
-    const { draft_id, error, retry_count } = payload;
+  private async onDraftFailed(payload: DraftFailedPayload): Promise<void> {
+    const { campaign_id, poc_id, draft_id, error, retry_count } = payload;
     console.log(
-      `[PipelineService] send.failed — draft ${draft_id} (attempt ${retry_count}): ${error}`
+      `[PipelineService] draft.failed — poc ${poc_id} (attempt ${retry_count}): ${error}`
     );
 
-    if (retry_count < config.retryLimit) {
-      // Re-publish for retry
-      await this.broker.publish('send.requested', { draft_id });
-      console.log(`[PipelineService] Retrying send for draft ${draft_id}`);
-    } else {
-      // Mark as permanently failed
-      const campaigns = await Campaign.find({
-        'pipeline_state.draft_ids': draft_id,
-      });
+    const campaign = await this.findCampaign(campaign_id);
+    if (!campaign || campaign.status === 'paused') return;
 
-      for (const campaign of campaigns) {
-        campaign.pipeline_state.failed_draft_ids.push(draft_id);
-        await this.checkCompletion(campaign);
-      }
+    if (retry_count < config.retryLimit) {
+      await this.broker.publish('messaging.requested', {
+        campaign_id,
+        poc_id,
+      });
+      console.log(`[PipelineService] Retrying messaging.requested for poc ${poc_id}`);
+      return;
     }
+
+    const marker = draft_id ?? `poc:${poc_id}`;
+    if (!campaign.pipeline_state.failed_draft_ids.includes(marker)) {
+      campaign.pipeline_state.failed_draft_ids.push(marker);
+    }
+    await this.checkMessagingTerminal(campaign);
   }
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -248,48 +207,56 @@ export class PipelineService {
     console.log(`[PipelineService] Campaign ${campaign.campaign_id} → stage: ${stage}`);
   }
 
-  private async checkCompletion(campaign: ICampaign): Promise<void> {
-    const { draft_ids, sent_draft_ids, failed_draft_ids } = campaign.pipeline_state;
-    const processed = sent_draft_ids.length + failed_draft_ids.length;
-
-    if (processed >= draft_ids.length && draft_ids.length > 0) {
-      campaign.status = 'completed';
-      campaign.pipeline_state.current_stage = 'completed';
-      campaign.pipeline_state.stage_timestamps.completed = new Date().toISOString();
+  /** All ranked prospects have a draft or a terminal draft failure. */
+  private async checkMessagingTerminal(campaign: ICampaign): Promise<void> {
+    const { ranked_prospect_ids, draft_ids, failed_draft_ids } = campaign.pipeline_state;
+    const n = ranked_prospect_ids.length;
+    if (n === 0) {
       await campaign.save();
-
-      const stats = this.computeStats(campaign);
-      await this.broker.publish('campaign.completed', {
-        campaign_id: campaign.campaign_id,
-        stats,
-      });
-
-      console.log(
-        `[PipelineService] Campaign ${campaign.campaign_id} COMPLETED. Sent: ${stats.emails_sent}, Failed: ${stats.emails_failed}`
-      );
-    } else {
-      await campaign.save();
+      return;
     }
+
+    const settled = draft_ids.length + failed_draft_ids.length;
+    if (settled < n) {
+      await campaign.save();
+      return;
+    }
+
+    campaign.status = 'completed';
+    campaign.pipeline_state.current_stage = 'completed';
+    campaign.pipeline_state.stage_timestamps.completed = new Date().toISOString();
+    await campaign.save();
+
+    const stats = this.computeStats(campaign);
+    await this.broker.publish('campaign.completed', {
+      campaign_id: campaign.campaign_id,
+      stats,
+    });
+
+    console.log(
+      `[PipelineService] Campaign ${campaign.campaign_id} COMPLETED. Drafts written: ${stats.drafts_generated}, draft failures: ${stats.drafts_rejected}`
+    );
   }
 
+  /**
+   * Shared CampaignStats still uses legacy field names; we treat drafts_generated as written
+   * drafts and drafts_rejected as terminal messaging failures (see shared-types follow-up).
+   */
   private computeStats(campaign: ICampaign): CampaignStats {
     const ps = campaign.pipeline_state;
     const totalProspects = ps.ranked_prospect_ids.length;
     const draftsGenerated = ps.draft_ids.length;
-    const emailsSent = ps.sent_draft_ids.length;
-    const emailsFailed = ps.failed_draft_ids.length;
-    const draftsApproved = emailsSent + emailsFailed; // approximation
-    const draftsRejected = draftsGenerated - draftsApproved;
+    const draftsFailed = ps.failed_draft_ids.length;
 
     return {
       total_prospects: totalProspects,
       drafts_generated: draftsGenerated,
-      drafts_approved: draftsApproved,
-      drafts_rejected: Math.max(0, draftsRejected),
-      emails_sent: emailsSent,
-      emails_failed: emailsFailed,
-      approval_rate: draftsGenerated > 0 ? draftsApproved / draftsGenerated : 0,
-      bounce_rate: emailsSent > 0 ? emailsFailed / (emailsSent + emailsFailed) : 0,
+      drafts_approved: draftsGenerated,
+      drafts_rejected: draftsFailed,
+      emails_sent: 0,
+      emails_failed: 0,
+      approval_rate: totalProspects > 0 ? draftsGenerated / totalProspects : 0,
+      bounce_rate: 0,
     };
   }
 }

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { config } from './config';
 import { createApp } from './app';
-import { createBroker } from '../local_infrastructure/factory/broker.factory';
+import { EventsBroker } from './rabbit/events-broker';
 
 async function main(): Promise<void> {
   // ── Connect to MongoDB ─────────────────────────────────────
@@ -10,37 +10,31 @@ async function main(): Promise<void> {
   console.log('[main] MongoDB connected.');
 
   // ── Create message broker ──────────────────────────────────
-  const broker = createBroker();
-  console.log(`[main] Broker type: ${config.brokerType}`);
+  const broker = new EventsBroker(config.rabbitmqUrl);
+  console.log('[main] EventsBroker (RabbitMQ topic exchange) ready.');
 
   // ── Build Express app ──────────────────────────────────────
-  const { app, pipelineService, reviewService } = createApp(broker);
+  const { app, pipelineService } = createApp(broker);
 
   // ── Start queue listeners ──────────────────────────────────
   await pipelineService.startListening();
-  await reviewService.startListening();
 
   // ── Start HTTP server ──────────────────────────────────────
   app.listen(config.port, () => {
     console.log(`[main] Orchestrator listening on :${config.port}`);
-    console.log(`[main] Endpoints:`);
-    console.log(`       POST   /campaigns              — Create campaign`);
-    console.log(`       GET    /campaigns              — List campaigns`);
-    console.log(`       GET    /campaigns/:id          — Campaign details`);
-    console.log(`       PATCH  /campaigns/:id          — Pause/resume`);
-    console.log(`       DELETE /campaigns/:id          — Cancel campaign`);
-    console.log(`       GET    /campaigns/:id/stats    — Campaign stats`);
-    console.log(`       GET    /campaigns/:id/prospects— List prospects`);
-    console.log(`       GET    /campaigns/:id/drafts   — List drafts`);
-    console.log(`       GET    /drafts/:id             — Get draft`);
-    console.log(`       PATCH  /drafts/:id             — Edit draft`);
-    console.log(`       POST   /drafts/:id/approve     — Approve draft`);
-    console.log(`       POST   /drafts/:id/reject      — Reject draft`);
-    console.log(`       POST   /drafts/:id/regenerate  — Regenerate draft`);
-    console.log(`       GET    /review/queue            — Review queue`);
-    console.log(`       POST   /review/bulk-approve     — Bulk approve`);
-    console.log(`       GET    /health                  — Liveness`);
-    console.log(`       GET    /status                  — System status`);
+    console.log(`[main] Endpoints (see design_docs/orchestrator_service_role.md section 3):`);
+    console.log(`       POST   /api/campaigns                 — Create campaign`);
+    console.log(`       GET    /api/campaigns                 — List campaigns`);
+    console.log(`       GET    /api/campaigns/:id            — Campaign details`);
+    console.log(`       PATCH  /api/campaigns/:id            — Pause/resume`);
+    console.log(`       DELETE /api/campaigns/:id            — Cancel campaign`);
+    console.log(`       GET    /api/campaigns/:id/stats      — Campaign stats`);
+    console.log(`       GET    /api/campaigns/:id/prospects — List prospects`);
+    console.log(`       GET    /api/campaigns/:id/drafts    — List drafts`);
+    console.log(`       GET    /api/prospects/:id           — Prospect detail (stub)`);
+    console.log(`       GET    /api/drafts/:id               — Draft by id`);
+    console.log(`       GET    /api/status                    — System status`);
+    console.log(`       GET    /health                        — Liveness`);
   });
 
   // ── Graceful shutdown ──────────────────────────────────────

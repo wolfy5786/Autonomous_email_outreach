@@ -13,6 +13,7 @@ import structlog
 from config import settings
 from logging_setup import configure_logging
 from pipeline import SourcingPipeline
+from publisher import SourcingAMQPPublisher
 from shared.models.db import init_db
 from subscriber import SourcingAMQPConsumer, _safe_broker_host
 
@@ -43,7 +44,8 @@ async def _run() -> None:
     )
 
     mongo_client = None
-    pipeline = SourcingPipeline()
+    publisher = SourcingAMQPPublisher(settings)
+    pipeline = SourcingPipeline(publisher=publisher)
     consumer = SourcingAMQPConsumer(settings, pipeline)
     stop_event = asyncio.Event()
     _install_signal_handlers(stop_event)
@@ -52,6 +54,7 @@ async def _run() -> None:
         mongo_client, database = await init_db()
         log.info("mongo initialized", module=__name__, db_name=database.name)
 
+        await publisher.connect()
         await consumer.connect()
         await consumer.start_consumer()
         log.info(
@@ -66,6 +69,10 @@ async def _run() -> None:
             await consumer.disconnect()
         except Exception:
             log.error("sourcing service consumer disconnect failed", module=__name__, exc_info=True)
+        try:
+            await publisher.disconnect()
+        except Exception:
+            log.error("sourcing service publisher disconnect failed", module=__name__, exc_info=True)
         finally:
             if mongo_client is not None:
                 try:

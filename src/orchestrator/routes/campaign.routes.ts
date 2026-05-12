@@ -7,7 +7,7 @@ import { CreateCampaignPayload } from '../../shared/types';
 export function createCampaignRouter(pipelineService: PipelineService): Router {
   const router = Router();
 
-  // POST /campaigns — Create and trigger a new outreach campaign
+  // POST /api/campaigns — Create and trigger a new outreach campaign
   router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const payload = req.body as CreateCampaignPayload;
@@ -23,7 +23,7 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // GET /campaigns — List all campaigns with status
+  // GET /api/campaigns — List all campaigns with status
   router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const campaigns = await Campaign.find()
@@ -35,7 +35,7 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // GET /campaigns/:id — Get campaign details and pipeline status
+  // GET /api/campaigns/:id — Get campaign details and pipeline status
   router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const campaign = await Campaign.findOne({ campaign_id: String(req.params.id) }).select('-__v');
@@ -46,7 +46,7 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // PATCH /campaigns/:id — Update campaign config (pause, resume, update send window)
+  // PATCH /api/campaigns/:id — Update campaign config (pause, resume, update send window)
   router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { status, config: configUpdate } = req.body;
@@ -79,7 +79,7 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // DELETE /campaigns/:id — Cancel and archive a campaign
+  // DELETE /api/campaigns/:id — Cancel and archive a campaign
   router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const campaign = await Campaign.findOneAndUpdate(
@@ -95,7 +95,7 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // GET /campaigns/:id/stats — Sent count, approval rate, bounce rate
+  // GET /api/campaigns/:id/stats — Draft counts and success rate (no send/approval workflow)
   router.get('/:id/stats', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const campaign = await Campaign.findOne({ campaign_id: String(req.params.id) });
@@ -103,10 +103,8 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
 
       const ps = campaign.pipeline_state;
       const totalProspects = ps.ranked_prospect_ids.length;
-      const draftsGenerated = ps.draft_ids.length;
-      const emailsSent = ps.sent_draft_ids.length;
-      const emailsFailed = ps.failed_draft_ids.length;
-      const draftsApproved = emailsSent + emailsFailed;
+      const draftsWritten = ps.draft_ids.length;
+      const draftsFailed = ps.failed_draft_ids.length;
 
       res.json({
         campaign_id: campaign.campaign_id,
@@ -114,13 +112,9 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
         current_stage: ps.current_stage,
         stats: {
           total_prospects: totalProspects,
-          drafts_generated: draftsGenerated,
-          drafts_approved: draftsApproved,
-          drafts_rejected: Math.max(0, draftsGenerated - draftsApproved),
-          emails_sent: emailsSent,
-          emails_failed: emailsFailed,
-          approval_rate: draftsGenerated > 0 ? draftsApproved / draftsGenerated : 0,
-          bounce_rate: emailsSent > 0 ? emailsFailed / (emailsSent + emailsFailed) : 0,
+          drafts_written: draftsWritten,
+          drafts_failed: draftsFailed,
+          draft_success_rate: totalProspects > 0 ? draftsWritten / totalProspects : 0,
         },
         stage_timestamps: ps.stage_timestamps,
       });
@@ -129,7 +123,7 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // GET /campaigns/:id/prospects — List scored prospects (delegates to NoSQL query)
+  // GET /api/campaigns/:id/prospects — List scored prospects (delegates to NoSQL query)
   router.get('/:id/prospects', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const campaign = await Campaign.findOne({ campaign_id: String(req.params.id) });
@@ -147,10 +141,10 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // GET /campaigns/:id/drafts — List all drafts for a campaign
+  // GET /api/campaigns/:id/drafts — List all drafts for a campaign
   router.get('/:id/drafts', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { EmailDraft } = await import('../models/email-draft.model');
+      const { EmailDraft } = await import('../../shared/models');
       const status = req.query.status as string | undefined;
       const filter: Record<string, unknown> = { campaign_id: String(req.params.id) };
       if (status) filter.status = status;

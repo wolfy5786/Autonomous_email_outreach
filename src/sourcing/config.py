@@ -11,6 +11,19 @@ class Settings(BaseSettings):
     rabbit_prefetch: int = 10
     log_level: str = "INFO"
     sourcing_requested_queue: str = "sourcing.requested"
+    events_exchange: str = "email_outreach.events"
+    sourcing_completed_routing_key: str = "sourcing.completed"
+
+    # --- Enrichment (see design_docs/enrichment_redesign.md) ---
+    serpapi_api_key: str | None = None
+    enrichment_http_timeout_s: float = 30.0
+    enrichment_llm_model: str = "gemini/gemini-1.5-pro"
+    enrichment_llm_temperature: float = 0.0
+    enrichment_llm_max_tokens: int = 1024
+    enrichment_llm_timeout_seconds: int = 60
+    enrichment_llm_max_retries: int = 3
+    # Hard cap on the page-markdown chunk passed to the LLM.
+    enrichment_llm_max_chars: int = 20000
 
 
 settings = Settings()
