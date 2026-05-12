@@ -11,8 +11,8 @@ from .contracts import (
     PersonDocument,
     PlanDocument,
     ProspectingCompletedEvent,
+    ProspectingRequestedEvent,
     RankedProspect,
-    SourcingCompletedEvent,
 )
 from .errors import PermanentProcessingError, RetryableProcessingError
 from .db import Mongo
@@ -34,12 +34,12 @@ class ProspectingWorker:
         self._mongo = mongo
         self._default_min = default_min_icp_score
 
-    def handle_sourcing_completed(self, msg: dict[str, Any]) -> dict[str, Any]:
+    def handle_prospecting_requested(self, msg: dict[str, Any]) -> dict[str, Any]:
         """
-        Input: { campaign_id, entity_ids[] }
+        Input: { campaign_id, plan_id?, entity_ids[] }
         Output: { campaign_id, ranked_prospects[] }
         """
-        event = SourcingCompletedEvent.model_validate(msg)
+        event = ProspectingRequestedEvent.model_validate(msg)
         campaign_id = event.campaign_id
         company_ids = [str(x) for x in event.entity_ids if x is not None]
 

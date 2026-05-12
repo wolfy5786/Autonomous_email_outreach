@@ -13,10 +13,11 @@ class ProspectingDocumentBase(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True, str_strip_whitespace=True)
 
 
-class SourcingCompletedEvent(ProspectingEventBase):
+class ProspectingRequestedEvent(ProspectingEventBase):
     model_config = ConfigDict(extra="allow", populate_by_name=True, str_strip_whitespace=True)
 
     campaign_id: str
+    plan_id: str
     entity_ids: list[str] = Field(default_factory=list)
 
 

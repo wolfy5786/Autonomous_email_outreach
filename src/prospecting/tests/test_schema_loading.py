@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.db import Mongo, MongoConfig
 from app.worker import ProspectingWorker
-from app.contracts import ProspectingCompletedEvent, SourcingCompletedEvent
+from app.contracts import ProspectingCompletedEvent, ProspectingRequestedEvent
 
 
 def _seed(db) -> None:
@@ -92,13 +92,16 @@ def test_schema_and_loading() -> Tuple[bool, str]:
         mongo.connect()
         worker = ProspectingWorker(mongo=mongo, default_min_icp_score=0.0)
 
-        sourcing_event = SourcingCompletedEvent.model_validate(
+        prospecting_event = ProspectingRequestedEvent.model_validate(
             {
                 "campaign_id": "campaign-001",
+                "plan_id": "plan-001",
                 "entity_ids": ["company-001"],
             }
         )
-        output = ProspectingCompletedEvent.model_validate(worker.handle_sourcing_completed(sourcing_event.model_dump(mode="json")))
+        output = ProspectingCompletedEvent.model_validate(
+            worker.handle_prospecting_requested(prospecting_event.model_dump(mode="json"))
+        )
 
         if output.campaign_id != "campaign-001":
             return False, "campaign id was not preserved in output"

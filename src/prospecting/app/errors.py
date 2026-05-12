@@ -6,7 +6,7 @@ class ProspectingError(Exception):
 
 
 class MalformedMessageError(ProspectingError):
-    """Permanent failure for invalid or non-JSON sourcing.completed payloads."""
+    """Permanent failure for invalid or non-JSON prospecting.requested payloads."""
 
 
 class PermanentProcessingError(ProspectingError):

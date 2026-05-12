@@ -6,7 +6,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Tuple
-import json
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -101,8 +100,7 @@ def test_tiebreaker_ordering() -> Tuple[bool, str]:
             scoring_mod.score_person = fake_score_person
 
             msg = {"campaign_id": "test-campaign", "entity_ids": [c["id"] for c in companies]}
-            out_json = worker.handle_sourcing_completed(msg)
-            payload = json.loads(out_json)
+            payload = worker.handle_prospecting_requested(msg)
 
             ranked = payload.get("ranked_prospects", [])
             # Expect person-2 (email_verified True) to appear before person-1 (False)
@@ -115,8 +113,7 @@ def test_tiebreaker_ordering() -> Tuple[bool, str]:
                 return _fail("email_verified tie-breaker did not order prospects correctly")
 
             # Stability: repeated runs produce same ordering
-            out_json2 = worker.handle_sourcing_completed(msg)
-            payload2 = json.loads(out_json2)
+            payload2 = worker.handle_prospecting_requested(msg)
             ids2 = [r.get("poc_id") for r in payload2.get("ranked_prospects", [])]
             if ids != ids2:
                 return _fail("ranking was not stable across repeated runs")

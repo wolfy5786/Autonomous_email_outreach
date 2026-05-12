@@ -56,13 +56,13 @@ docker compose run --rm tests python tests/test_api.py
 **Purpose**: Test asynchronous message queue operations.
 
 **Tests**:
-- Publish a simulated `sourcing.completed` event (from Sourcing Service)
+- Publish a simulated `prospecting.requested` event (from Orchestrator)
 - Check queue depth for pending messages
 - Monitor `prospecting.completed` queue for the service's output
 
 **Expected Output**: Message publication confirmation and processing status.
 
-**Note**: This test simulates the upstream Sourcing Service. If the message processing timeout expires, it's likely the service is still processing — this is normal.
+**Note**: This test simulates the upstream Orchestrator. If the message processing timeout expires, it's likely the service is still processing — this is normal.
 
 ---
 

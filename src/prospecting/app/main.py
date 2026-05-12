@@ -43,14 +43,14 @@ class AppState:
         self.broker.connect()
 
         def _run() -> None:
-            logger.info("consuming queue=%s", "sourcing.completed")
+            logger.info("consuming queue=%s", "prospecting.requested")
 
-            self.broker.consume_forever(queue_name="sourcing.completed", handler=self.handle_sourcing_completed_message)
+            self.broker.consume_forever(queue_name="prospecting.requested", handler=self.handle_prospecting_requested_message)
 
         self._consumer_thread = threading.Thread(target=_run, name="consumer", daemon=True)
         self._consumer_thread.start()
 
-    def handle_sourcing_completed_message(self, msg: dict, props: object | None = None, method: object | None = None) -> None:
+    def handle_prospecting_requested_message(self, msg: dict, props: object | None = None, method: object | None = None) -> None:
         # idempotency: skip already-processed events when event_id or idempotency_key is present
         event_id = None
         try:
@@ -89,7 +89,7 @@ class AppState:
             return
 
         try:
-            out = self.worker.handle_sourcing_completed(msg)
+            out = self.worker.handle_prospecting_requested(msg)
         except PermanentProcessingError as exc:
             _structured_log(
                 logging.ERROR,

@@ -75,7 +75,7 @@ class FakeWorker:
         self.result = result or {"campaign_id": "campaign-1", "ranked_prospects": []}
         self.error = error
 
-    def handle_sourcing_completed(self, msg):
+    def handle_prospecting_requested(self, msg):
         if self.error is not None:
             raise self.error
         return self.result
@@ -100,7 +100,7 @@ def test_missing_campaign_and_plan_classification() -> Tuple[bool, str]:
     try:
         missing_campaign_worker = ProspectingWorker(mongo=FakeMongo(campaign=None, plan=None), default_min_icp_score=0.0)
         try:
-            missing_campaign_worker.handle_sourcing_completed({"campaign_id": "campaign-1", "entity_ids": []})
+            missing_campaign_worker.handle_prospecting_requested({"campaign_id": "campaign-1", "plan_id": "plan-1", "entity_ids": []})
             return _fail("missing campaign was not rejected")
         except PermanentProcessingError:
             pass
@@ -110,7 +110,7 @@ def test_missing_campaign_and_plan_classification() -> Tuple[bool, str]:
             default_min_icp_score=0.0,
         )
         try:
-            retryable_plan_worker.handle_sourcing_completed({"campaign_id": "campaign-1", "entity_ids": []})
+            retryable_plan_worker.handle_prospecting_requested({"campaign_id": "campaign-1", "plan_id": "plan-1", "entity_ids": []})
             return _fail("temporary missing plan was not retried")
         except RetryableProcessingError:
             pass
@@ -120,7 +120,7 @@ def test_missing_campaign_and_plan_classification() -> Tuple[bool, str]:
             default_min_icp_score=0.0,
         )
         try:
-            permanent_plan_worker.handle_sourcing_completed({"campaign_id": "campaign-1", "entity_ids": []})
+            permanent_plan_worker.handle_prospecting_requested({"campaign_id": "campaign-1", "plan_id": "plan-1", "entity_ids": []})
             return _fail("active campaign without plan was not rejected permanently")
         except PermanentProcessingError:
             pass
@@ -132,7 +132,7 @@ def test_missing_campaign_and_plan_classification() -> Tuple[bool, str]:
 
 def test_retryable_mongo_and_publish_failures() -> Tuple[bool, str]:
     try:
-        event = {"campaign_id": "campaign-1", "entity_ids": [], "event_id": "evt-1", "idempotency_key": "evt-1"}
+        event = {"campaign_id": "campaign-1", "plan_id": "plan-1", "entity_ids": [], "event_id": "evt-1", "idempotency_key": "evt-1"}
 
         mongo_failure_state = _build_state(
             mongo=FakeMongo(campaign={"id": "campaign-1", "status": "active", "config": {}}, plan={"id": "plan-1", "campaign_id": "campaign-1", "company_signals": [], "poc_signals": [], "scoring_weights": {}}),
@@ -140,7 +140,7 @@ def test_retryable_mongo_and_publish_failures() -> Tuple[bool, str]:
             worker=FakeWorker(error=PyMongoError("db down")),
         )
         try:
-            mongo_failure_state.handle_sourcing_completed_message(event, FakeProps())
+            mongo_failure_state.handle_prospecting_requested_message(event, FakeProps())
             return _fail("mongo failure was not retried")
         except RetryableProcessingError:
             pass
@@ -151,7 +151,7 @@ def test_retryable_mongo_and_publish_failures() -> Tuple[bool, str]:
             worker=FakeWorker(),
         )
         try:
-            publish_failure_state.handle_sourcing_completed_message(event, FakeProps())
+            publish_failure_state.handle_prospecting_requested_message(event, FakeProps())
             return _fail("publish failure was not retried")
         except RetryableProcessingError:
             pass
@@ -167,9 +167,9 @@ def test_duplicate_event_skip() -> Tuple[bool, str]:
         broker = FakeBroker()
         worker = FakeWorker()
         state = _build_state(mongo=mongo, broker=broker, worker=worker)
-        state.handle_sourcing_completed_message({"campaign_id": "campaign-1", "entity_ids": [], "event_id": "evt-dup", "idempotency_key": "evt-dup"}, FakeProps())
+        state.handle_prospecting_requested_message({"campaign_id": "campaign-1", "plan_id": "plan-1", "entity_ids": [], "event_id": "evt-dup", "idempotency_key": "evt-dup"}, FakeProps())
         mongo._processed = True
-        state.handle_sourcing_completed_message({"campaign_id": "campaign-1", "entity_ids": [], "event_id": "evt-dup", "idempotency_key": "evt-dup"}, FakeProps())
+        state.handle_prospecting_requested_message({"campaign_id": "campaign-1", "plan_id": "plan-1", "entity_ids": [], "event_id": "evt-dup", "idempotency_key": "evt-dup"}, FakeProps())
         if len(broker.published) != 1:
             return _fail("duplicate event was not skipped")
         return _ok("Duplicate events are skipped before publish")

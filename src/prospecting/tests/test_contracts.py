@@ -16,8 +16,8 @@ from app.contracts import (
     PersonDocument,
     PlanDocument,
     ProspectingCompletedEvent,
+    ProspectingRequestedEvent,
     RankedProspect,
-    SourcingCompletedEvent,
 )
 
 
@@ -29,20 +29,22 @@ def _fail(message: str) -> Tuple[bool, str]:
     return False, message
 
 
-def test_sourcing_event_contract() -> Tuple[bool, str]:
+def test_prospecting_requested_contract() -> Tuple[bool, str]:
     try:
-        event = SourcingCompletedEvent.model_validate(
+        event = ProspectingRequestedEvent.model_validate(
             {
                 "campaign_id": "campaign-1",
+                "plan_id": "plan-1",
                 "entity_ids": ["company-1", "company-2"],
             }
         )
         if event.entity_ids != ["company-1", "company-2"]:
             return _fail("entity_ids were not preserved")
 
-        event_with_metadata = SourcingCompletedEvent.model_validate(
+        event_with_metadata = ProspectingRequestedEvent.model_validate(
             {
                 "campaign_id": "campaign-1",
+                "plan_id": "plan-1",
                 "entity_ids": ["company-1"],
                 "event_id": "evt-internal-1",
                 "trace_id": "trace-internal-1",
@@ -51,10 +53,10 @@ def test_sourcing_event_contract() -> Tuple[bool, str]:
             }
         )
         if event_with_metadata.campaign_id != "campaign-1" or event_with_metadata.entity_ids != ["company-1"]:
-            return _fail("sourcing event metadata handling failed")
-        return _ok("Sourcing event contract enforces the expected shape")
+            return _fail("prospecting requested metadata handling failed")
+        return _ok("Prospecting requested contract enforces the expected shape")
     except Exception as exc:
-        return _fail(f"Sourcing event contract failed: {exc}")
+        return _fail(f"Prospecting requested contract failed: {exc}")
 
 
 def test_mongo_documents_contract() -> Tuple[bool, str]:
@@ -144,7 +146,7 @@ def main() -> int:
     print("=" * 50 + "\n")
 
     tests = [
-        ("Sourcing Event Contract", test_sourcing_event_contract),
+        ("Prospecting Requested Contract", test_prospecting_requested_contract),
         ("Mongo Document Contract", test_mongo_documents_contract),
         ("Output Contract", test_output_contract),
     ]

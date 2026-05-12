@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test message queue flow - simulates sourcing service messages.
+Test message queue flow - simulates orchestrator prospecting requests.
 """
 
 import os
@@ -12,18 +12,21 @@ import uuid
 from typing import Tuple
 from datetime import datetime
 
+from pymongo import MongoClient
+
 
 def _build_test_event(event_id: str | None = None) -> dict:
     test_event_id = event_id or f"evt-{uuid.uuid4()}"
     return {
         "campaign_id": "test-campaign-001",
+        "plan_id": "plan-test-001",
         "entity_ids": ["company-test-001", "company-test-002"],
         "event_id": test_event_id,
         "idempotency_key": test_event_id,
     }
 
-def publish_sourcing_completed_event(event_payload: dict | None = None) -> Tuple[bool, str]:
-    """Publish a sourcing.completed event to test queue consumption."""
+def publish_prospecting_requested_event(event_payload: dict | None = None) -> Tuple[bool, str]:
+    """Publish a prospecting.requested event to test queue consumption."""
     try:
         url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
         exchange = os.getenv("RABBITMQ_EXCHANGE", "email_outreach.events")
@@ -37,14 +40,14 @@ def publish_sourcing_completed_event(event_payload: dict | None = None) -> Tuple
         channel.exchange_declare(exchange=dlx_exchange, exchange_type='topic', durable=True, passive=True)
         
         queue_result = channel.queue_declare(
-            queue='sourcing.completed',
+            queue='prospecting.requested',
             durable=True,
             arguments={
                 'x-dead-letter-exchange': dlx_exchange,
-                'x-dead-letter-routing-key': 'sourcing.completed.dlq'
+                'x-dead-letter-routing-key': 'prospecting.requested.dlq'
             }
         )
-        channel.queue_bind(exchange=exchange, queue='sourcing.completed', routing_key='sourcing.completed')
+        channel.queue_bind(exchange=exchange, queue='prospecting.requested', routing_key='prospecting.requested')
         
         # Create a test event that matches the locked contract
         event_payload = event_payload or _build_test_event()
@@ -52,7 +55,7 @@ def publish_sourcing_completed_event(event_payload: dict | None = None) -> Tuple
         # Publish the event
         channel.basic_publish(
             exchange=exchange,
-            routing_key='sourcing.completed',
+            routing_key='prospecting.requested',
             body=json.dumps(event_payload),
             properties=pika.BasicProperties(
                 delivery_mode=2,  # Persistent
@@ -62,31 +65,65 @@ def publish_sourcing_completed_event(event_payload: dict | None = None) -> Tuple
         
         connection.close()
         
-        return True, f"Published sourcing.completed event with {len(event_payload['entity_ids'])} entities"
+        return True, f"Published prospecting.requested event with {len(event_payload['entity_ids'])} entities"
     except Exception as e:
         return False, f"Failed to publish event: {str(e)}"
 
 
 def duplicate_event_idempotency_test() -> Tuple[bool, str]:
-    """Publish the same sourcing event twice and ensure only one prospecting.completed message is emitted."""
+    """Publish the same prospecting request twice and ensure only one prospecting.completed message is emitted."""
     try:
         url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
         exchange = os.getenv("RABBITMQ_EXCHANGE", "email_outreach.events")
+        mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+        mongo_db = os.getenv("MONGODB_DB", "email_outreach")
 
         connection = pika.BlockingConnection(pika.URLParameters(url))
         channel = connection.channel()
+
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        db = client[mongo_db]
 
         channel.exchange_declare(exchange=exchange, exchange_type='topic', durable=True, passive=True)
         test_queue = f"prospecting.completed.test.{uuid.uuid4().hex}"
         channel.queue_declare(queue=test_queue, exclusive=True, auto_delete=True)
         channel.queue_bind(exchange=exchange, queue=test_queue, routing_key='prospecting.completed')
 
+        campaign_id = f"campaign-{uuid.uuid4().hex}"
+        plan_id = f"plan-{uuid.uuid4().hex}"
         event_payload = _build_test_event(event_id=f"dup-{uuid.uuid4()}")
+        event_payload["campaign_id"] = campaign_id
+        event_payload["plan_id"] = plan_id
+
+        db.campaigns.replace_one(
+            {"_id": campaign_id},
+            {
+                "_id": campaign_id,
+                "id": campaign_id,
+                "name": "Test Campaign",
+                "status": "active",
+                "config": {"min_icp_score": 0.0},
+                "plan_id": plan_id,
+            },
+            upsert=True,
+        )
+        db.plans.replace_one(
+            {"_id": plan_id},
+            {
+                "_id": plan_id,
+                "id": plan_id,
+                "campaign_id": campaign_id,
+                "company_signals": [],
+                "poc_signals": [],
+                "scoring_weights": {},
+            },
+            upsert=True,
+        )
 
         for _ in range(2):
             channel.basic_publish(
                 exchange=exchange,
-                routing_key='sourcing.completed',
+                routing_key='prospecting.requested',
                 body=json.dumps(event_payload),
                 properties=pika.BasicProperties(
                     delivery_mode=2,
@@ -118,11 +155,12 @@ def duplicate_event_idempotency_test() -> Tuple[bool, str]:
                 break
 
         connection.close()
+        client.close()
 
         if len(received) == 1:
-            return True, "Duplicate sourcing.completed event produced exactly one prospecting.completed output"
+            return True, "Duplicate prospecting.requested event produced exactly one prospecting.completed output"
         if len(received) > 1:
-            return False, f"Duplicate sourcing.completed event produced {len(received)} prospecting.completed outputs"
+            return False, f"Duplicate prospecting.requested event produced {len(received)} prospecting.completed outputs"
         return False, "Did not receive any prospecting.completed output for duplicate-event test"
     except Exception as e:
         return False, f"Duplicate-event idempotency test failed: {str(e)}"
@@ -133,20 +171,24 @@ def malformed_message_dlq_test() -> Tuple[bool, str]:
     try:
         url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
         exchange = os.getenv("RABBITMQ_EXCHANGE", "email_outreach.events")
-        dlq_queue = "sourcing.completed.dlq"
+        dlq_queue = "prospecting.requested.dlq"
+        dlx_exchange = os.getenv("RABBITMQ_DLX_EXCHANGE", "email_outreach.dlx")
 
         connection = pika.BlockingConnection(pika.URLParameters(url))
         channel = connection.channel()
 
         channel.exchange_declare(exchange=exchange, exchange_type='topic', durable=True, passive=True)
-        channel.queue_declare(queue=dlq_queue, passive=True)
+        channel.exchange_declare(exchange=dlx_exchange, exchange_type='topic', durable=True, passive=True)
+        channel.queue_declare(queue='prospecting.requested', durable=True, arguments={'x-dead-letter-exchange': dlx_exchange, 'x-dead-letter-routing-key': 'prospecting.requested.dlq'})
+        channel.queue_declare(queue=dlq_queue, durable=True)
+        channel.queue_bind(exchange=dlx_exchange, queue=dlq_queue, routing_key='prospecting.requested.dlq')
 
         marker = f"malformed-{uuid.uuid4().hex}"
         malformed_body = f'{{"campaign_id":"test-campaign-001","marker":"{marker}"'
 
         channel.basic_publish(
             exchange=exchange,
-            routing_key='sourcing.completed',
+            routing_key='prospecting.requested',
             body=malformed_body.encode("utf-8"),
             properties=pika.BasicProperties(
                 delivery_mode=2,
@@ -175,26 +217,26 @@ def malformed_message_dlq_test() -> Tuple[bool, str]:
         connection.close()
 
         if found:
-            return True, "Malformed sourcing.completed message was dead-lettered"
+            return True, "Malformed prospecting.requested message was dead-lettered"
         return False, "Malformed message was not observed in the DLQ"
     except Exception as e:
         return False, f"Malformed message DLQ test failed: {str(e)}"
 
 
 def check_queue_depth() -> Tuple[bool, str]:
-    """Check the depth of sourcing.completed queue."""
+    """Check the depth of prospecting.requested queue."""
     try:
         url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
         
         connection = pika.BlockingConnection(pika.URLParameters(url))
         channel = connection.channel()
         
-        method, properties, body = channel.basic_get(queue='sourcing.completed', auto_ack=False)
+        method, properties, body = channel.basic_get(queue='prospecting.requested', auto_ack=False)
         
         if method:
             # Put it back for the consumer
             channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-            return True, f"Found {method.message_count} message(s) in sourcing.completed queue"
+            return True, f"Found {method.message_count} message(s) in prospecting.requested queue"
         else:
             return True, "Queue is empty (messages may have been consumed)"
     except Exception as e:
@@ -262,7 +304,7 @@ def main():
     print("="*50 + "\n")
     
     tests = [
-        ("Publish Sourcing Event", publish_sourcing_completed_event),
+        ("Publish Prospecting Request", publish_prospecting_requested_event),
         ("Check Queue Depth", check_queue_depth),
         ("Monitor Processing", monitor_prospecting_completed_queue),
         ("Duplicate Event Idempotency", duplicate_event_idempotency_test),
