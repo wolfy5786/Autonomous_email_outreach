@@ -82,3 +82,4 @@ These rules are **non-negotiable**. Follow them on every task, in every language
 <!-- week2: data layer -->
 <!-- week3: contact dedup -->
 <!-- week3: metrics tracking -->
+<!-- week3: scheduler docs -->
