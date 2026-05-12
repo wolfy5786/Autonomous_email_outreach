@@ -2,6 +2,8 @@
 
 An event-driven microservices platform for autonomous B2B email outreach — from lead discovery through personalized messaging.
 
+**Demo:** https://drive.google.com/file/d/1ZxPS5j5d_E9_QmGBCyzNEtdo2aKq3kh8/view?usp=sharing
+
 ## Architecture
 
 ```
