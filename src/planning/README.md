@@ -1,6 +1,6 @@
 # Planning Service
 
-Consumes `plan.requested`, analyses a campaign's ICP + product profile via a configurable LLM, writes a structured Plan Document to MongoDB, and publishes `plan.ready`.
+Consumes `plan.requested`, analyses a campaign's ICP + product profile via a configurable LLM, writes a structured Plan Document to MongoDB, and publishes `plan.ready` (consumed **only** by the Orchestrator — see root [`README.md`](../../README.md) § Message Queues).
 
 ## Run locally
 
@@ -24,4 +24,4 @@ uv sync --extra dev
 uv run pytest
 ```
 
-See [`README.md`](../../README.md), [`planning_service_role.md`](../../planning_service_role.md), and [`data_sourcing_map.md`](../../data_sourcing_map.md) for how Plan Documents steer Sourcing versus Prospecting workloads.
+See [`README.md`](../../README.md), [`planning_service_role.md`](../../design_docs/planning_service_role.md), and [`data_sourcing_map.md`](../../design_docs/data_sourcing_map.md) for how Plan Documents steer Sourcing versus Prospecting workloads.

@@ -12,18 +12,25 @@ export function createApiRouter(): Router {
   // GET /api/status — Queue depths, service statuses, DLQ count
   router.get('/status', async (_req: Request, res: Response, next: NextFunction) => {
     try {
-      const running = await Campaign.countDocuments({ status: 'running' });
-      const inMessaging = await Campaign.countDocuments({
-        status: 'running',
-        'pipeline_state.current_stage': 'messaging',
-      });
+      const PIPELINE_ACTIVE = ['planning', 'sourcing', 'prospecting', 'messaging'] as const;
+      const active_pipeline = await Campaign.countDocuments({ status: { $in: PIPELINE_ACTIVE } });
+      const in_messaging = await Campaign.countDocuments({ status: 'messaging' });
       const completed = await Campaign.countDocuments({ status: 'completed' });
       const paused = await Campaign.countDocuments({ status: 'paused' });
+      const cancelled = await Campaign.countDocuments({ status: 'cancelled' });
+      const failed = await Campaign.countDocuments({ status: 'failed' });
 
       res.json({
         service: 'orchestrator',
         uptime_seconds: Math.floor(process.uptime()),
-        campaigns: { running, messaging: inMessaging, completed, paused },
+        campaigns: {
+          active_pipeline,
+          in_messaging,
+          completed,
+          paused,
+          cancelled,
+          failed,
+        },
         queues: {
           note: 'Queue depth / DLQ metrics require broker integration (stub)',
           depths: null,

@@ -30,6 +30,7 @@ const PipelineStateSchema = new Schema(
     plan_id: { type: String, default: null },
     sourced_entity_ids: { type: [String], default: [] },
     ranked_prospect_ids: { type: [String], default: [] },
+    messaging_target_ids: { type: [String] },
     draft_ids: { type: [String], default: [] },
     sent_draft_ids: { type: [String], default: [] },
     failed_draft_ids: { type: [String], default: [] },
@@ -47,22 +48,38 @@ const CampaignSchema = new Schema(
     plan_id: { type: String, default: null },
     status: {
       type: String,
-      enum: ['draft', 'running', 'review', 'completed', 'paused'],
-      default: 'draft',
+      enum: [
+        'pending',
+        'planning',
+        'sourcing',
+        'prospecting',
+        'messaging',
+        'paused',
+        'completed',
+        'failed',
+        'cancelled',
+      ],
+      default: 'pending',
     },
     config: {
-      email_channel: {
-        type: String,
-        enum: ['smtp', 'sendgrid', 'postmark', 'ses'],
-        required: true,
+      email_account: {
+        provider: { type: String, enum: ['gmail', 'microsoft'], required: true },
+        credentials_ref: { type: String, required: true },
       },
-      email_channel_config: { type: Schema.Types.Mixed, default: {} },
       min_icp_score: { type: Number, required: true },
       freshness_days: { type: Number, required: true },
+      max_drafts: { type: Number, required: true },
       send_window: {
-        start_hour: { type: Number, required: true },
-        end_hour: { type: Number, required: true },
-        timezone: { type: String, required: true },
+        type: new Schema(
+          {
+            start_hour: { type: Number },
+            end_hour: { type: Number },
+            timezone: { type: String },
+          },
+          { _id: false }
+        ),
+        required: false,
+        default: undefined,
       },
     },
     pipeline_state: { type: PipelineStateSchema, default: () => ({}) },

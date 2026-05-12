@@ -183,6 +183,7 @@ class SourcingPipeline:
             )
             return
 
+        entity_ids = [str(c.id) for c in companies_for_enrichment]
         payload = {
             "campaign_id": job.campaign_id,
             "plan_id": job.plan_id,
@@ -190,12 +191,29 @@ class SourcingPipeline:
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "companies_persisted": len(persisted),
             "companies_enriched": len(companies_for_enrichment),
+            "entity_ids": entity_ids,
         }
         try:
             await self._publisher.publish_completed(payload)
         except Exception as e:
             logger.warning(
                 "stage=publish_completed_failed campaign_id=%s error=%s",
+                job.campaign_id,
+                e,
+                exc_info=True,
+            )
+            return
+
+        prospecting_payload = {
+            "campaign_id": job.campaign_id,
+            "plan_id": job.plan_id,
+            "entity_ids": entity_ids,
+        }
+        try:
+            await self._publisher.publish_prospecting_requested(prospecting_payload)
+        except Exception as e:
+            logger.warning(
+                "stage=publish_prospecting_requested_failed campaign_id=%s error=%s",
                 job.campaign_id,
                 e,
                 exc_info=True,

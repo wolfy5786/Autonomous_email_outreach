@@ -21,6 +21,25 @@ _LINKEDIN_AUTH_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Generic auth/paywall path fragments seen across SaaS landing pages.
+_GENERIC_AUTH_PATH_RE = re.compile(
+    r"(^|/)(login|signin|sign-in|signup|sign-up|auth|sso|oauth|account)(/|$)",
+    re.IGNORECASE,
+)
+
+# Phrases that, when dominating a thin landing page, indicate a wall rather
+# than primary content. Matched against a lowered markdown body.
+_PAYWALL_PHRASES = (
+    "please sign in",
+    "please log in",
+    "sign in to continue",
+    "log in to continue",
+    "you must be logged in",
+    "subscribe to read",
+    "subscribers only",
+    "verify your age",
+)
+
 
 @dataclass(frozen=True)
 class PageFetchResult:
@@ -35,17 +54,29 @@ class CrawlError(RuntimeError):
 
 
 def _is_login_wall(final_url: str, markdown: str) -> bool:
-    """Heuristic: redirect into an auth path, or the thin LinkedIn authwall body."""
+    """Heuristic for login / paywall / age-gate interstitials.
+
+    Fires on three signals:
+    - Redirect into a LinkedIn auth path (operation 1's primary case).
+    - Redirect into a generic ``/login`` / ``/auth`` / ``/sso`` path.
+    - A thin body whose dominant copy is sign-in / paywall / age-gate.
+    """
     try:
         path = urlparse(final_url).path or ""
     except ValueError:
         path = ""
     if _LINKEDIN_AUTH_PATH_RE.search(path):
         return True
+    if _GENERIC_AUTH_PATH_RE.search(path):
+        return True
     if len(markdown) < 1200 and "Sign in" in markdown and (
         "Join now" in markdown or "Continue with" in markdown
     ):
         return True
+    if len(markdown) < 1500:
+        lowered = markdown.lower()
+        if any(phrase in lowered for phrase in _PAYWALL_PHRASES):
+            return True
     return False
 
 

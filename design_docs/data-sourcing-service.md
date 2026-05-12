@@ -377,18 +377,20 @@ Collection: `hints`. See `src/shared/models/hint.py` (`Hint` / Beanie).
 
 ### 10.1 Messages (authoritative from [README.md](../README.md))
 
-| Event | Payload |
-|-------|---------|
-| `sourcing.requested` | `{ campaign_id, plan_id }` |
-| `sourcing.completed` | `{ campaign_id, entity_ids[] }` |
-| `sourcing.partial` | `{ campaign_id, entity_id, missing_fields[] }` |
+| Event | Payload | Consumer (v1) |
+|-------|---------|----------------|
+| `sourcing.requested` | `{ campaign_id, plan_id }` | **Sourcing Service** |
+| `sourcing.completed` | `{ campaign_id, entity_ids[] }` | **Orchestrator** |
+| `sourcing.partial` | `{ campaign_id, entity_id, missing_fields[] }` | **Orchestrator** |
+
+Sourcing **publishes** `sourcing.completed` / `sourcing.partial`; it does **not** consume `plan.ready` — the Plan Document is loaded from Mongo using `plan_id` on `sourcing.requested`.
 
 ### 10.2 Idempotency and at-least-once delivery
 
 - Queues are **durable** with **at-least-once** delivery; consumers must be **idempotent**.
 - **Idempotency key:** `hash(campaign_id + plan_id + request_id + entity_id + operation)` for each upsert.
 - **Dedup:** Reprocessing the same `sourcing.requested` should not create duplicate `company_record` rows for the same normalized domain; use upsert on `(domain)` or `external_ids.yc_slug` etc.
-- **Partial events:** May be emitted multiple times for the same entity as more fields fill in; downstream consumers should merge by `entity_id`.
+- **Partial events:** May be emitted multiple times for the same entity as more fields fill in; the **Orchestrator** (sole consumer of `sourcing.partial`) should merge by `entity_id`.
 
 ### 10.3 Retries and DLQ
 

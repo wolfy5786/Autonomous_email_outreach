@@ -7,11 +7,39 @@ import {
   SourcingCompletedPayload,
   SourcingPartialPayload,
   ProspectingCompletedPayload,
+  CampaignCompletedPayload,
   CampaignStats,
   PipelineStage,
+  CampaignStatus,
 } from '../../shared/types';
 import { config } from '../config';
 import type { DraftWrittenPayload, DraftFailedPayload } from '../types/queue-payloads';
+
+/** Statuses where downstream events must not advance or mutate pipeline progress. */
+const NONPROCESSING_STATUSES: CampaignStatus[] = ['paused', 'cancelled', 'completed', 'failed'];
+
+function skipPipelineHandlers(status: CampaignStatus): boolean {
+  return NONPROCESSING_STATUSES.includes(status);
+}
+
+/** Pipeline stages mirrored onto campaign `status` while work is in flight. */
+const ACTIVE_STAGE_STATUSES: CampaignStatus[] = ['planning', 'sourcing', 'prospecting', 'messaging'];
+
+/**
+ * Inbound queues for this service only — mirrors `queues` entries in
+ * {@link ../../local_infrastructure/rabbit_mq/definitions.json} (coordination queues, lines 48–54).
+ */
+const ORCHESTRATOR_INBOUND_QUEUE_NAMES = [
+  'plan.ready',
+  'sourcing.completed',
+  'sourcing.partial',
+  'prospecting.completed',
+  'draft.written',
+  'draft.failed',
+  'campaign.completed',
+] as const;
+
+type OrchestratorInboundQueue = (typeof ORCHESTRATOR_INBOUND_QUEUE_NAMES)[number];
 
 /**
  * PipelineService coordinates the entire campaign lifecycle.
@@ -26,31 +54,26 @@ export class PipelineService {
   // ── Subscriptions ────────────────────────────────────────────
 
   async startListening(): Promise<void> {
-    await this.broker.subscribe('plan.ready', (msg) =>
-      this.onPlanReady(msg as PlanReadyPayload)
-    );
+    const handlers: {
+      readonly [Q in OrchestratorInboundQueue]: (msg: unknown) => Promise<void>;
+    } = {
+      'plan.ready': (msg) => this.onPlanReady(msg as PlanReadyPayload),
+      'sourcing.completed': (msg) => this.onSourcingCompleted(msg as SourcingCompletedPayload),
+      'sourcing.partial': (msg) => this.onSourcingPartial(msg as SourcingPartialPayload),
+      'prospecting.completed': (msg) =>
+        this.onProspectingCompleted(msg as ProspectingCompletedPayload),
+      'draft.written': (msg) => this.onDraftWritten(msg as DraftWrittenPayload),
+      'draft.failed': (msg) => this.onDraftFailed(msg as DraftFailedPayload),
+      'campaign.completed': (msg) => this.onCampaignCompleted(msg as CampaignCompletedPayload),
+    };
 
-    await this.broker.subscribe('sourcing.completed', (msg) =>
-      this.onSourcingCompleted(msg as SourcingCompletedPayload)
-    );
+    for (const queueName of ORCHESTRATOR_INBOUND_QUEUE_NAMES) {
+      await this.broker.subscribe(queueName, handlers[queueName]);
+    }
 
-    await this.broker.subscribe('sourcing.partial', (msg) =>
-      this.onSourcingPartial(msg as SourcingPartialPayload)
+    console.log(
+      `[PipelineService] Listening on coordination queues only: ${ORCHESTRATOR_INBOUND_QUEUE_NAMES.join(', ')}.`
     );
-
-    await this.broker.subscribe('prospecting.completed', (msg) =>
-      this.onProspectingCompleted(msg as ProspectingCompletedPayload)
-    );
-
-    await this.broker.subscribe('draft.written', (msg) =>
-      this.onDraftWritten(msg as DraftWrittenPayload)
-    );
-
-    await this.broker.subscribe('draft.failed', (msg) =>
-      this.onDraftFailed(msg as DraftFailedPayload)
-    );
-
-    console.log('[PipelineService] Listening on all downstream queues.');
   }
 
   // ── Campaign Creation ────────────────────────────────────────
@@ -64,7 +87,7 @@ export class PipelineService {
       icp: payload.icp,
       product_profile: payload.product_profile,
       config: payload.config,
-      status: 'running',
+      status: 'planning',
       pipeline_state: {
         current_stage: 'planning',
         stage_timestamps: {
@@ -87,7 +110,7 @@ export class PipelineService {
     console.log(`[PipelineService] plan.ready for campaign ${campaign_id}`);
 
     const campaign = await this.findCampaign(campaign_id);
-    if (!campaign || campaign.status === 'paused') return;
+    if (!campaign || skipPipelineHandlers(campaign.status)) return;
 
     campaign.plan_id = plan_id;
     campaign.pipeline_state.plan_id = plan_id;
@@ -106,7 +129,7 @@ export class PipelineService {
     console.log(`[PipelineService] sourcing.completed for campaign ${campaign_id} — ${entity_ids.length} entities`);
 
     const campaign = await this.findCampaign(campaign_id);
-    if (!campaign || campaign.status === 'paused') return;
+    if (!campaign || skipPipelineHandlers(campaign.status)) return;
 
     campaign.pipeline_state.sourced_entity_ids.push(...entity_ids);
     await this.advanceStage(campaign, 'prospecting');
@@ -136,17 +159,21 @@ export class PipelineService {
     );
 
     const campaign = await this.findCampaign(campaign_id);
-    if (!campaign || campaign.status === 'paused') return;
+    if (!campaign || skipPipelineHandlers(campaign.status)) return;
 
     const qualifiedIds = ranked_prospects
       .filter((p) => p.score >= campaign.config.min_icp_score)
       .map((p) => p.poc_id);
 
     campaign.pipeline_state.ranked_prospect_ids = qualifiedIds;
-    await this.advanceStage(campaign, 'messaging');
 
-    // Fan out one messaging.requested per qualified prospect
-    for (const poc_id of qualifiedIds) {
+    const cap = Math.floor(campaign.config.max_drafts);
+    const cappedIds = cap > 0 ? qualifiedIds.slice(0, cap) : qualifiedIds;
+
+    campaign.pipeline_state.messaging_target_ids = cappedIds;
+
+    await this.advanceStage(campaign, 'messaging');
+    for (const poc_id of cappedIds) {
       await this.broker.publish('messaging.requested', {
         campaign_id,
         poc_id,
@@ -154,7 +181,7 @@ export class PipelineService {
     }
 
     console.log(
-      `[PipelineService] Published messaging.requested for ${qualifiedIds.length} prospects`
+      `[PipelineService] Published messaging.requested for ${cappedIds.length} prospects`
     );
   }
 
@@ -163,10 +190,20 @@ export class PipelineService {
     console.log(`[PipelineService] draft.written — draft ${draft_id}`);
 
     const campaign = await this.findCampaign(campaign_id);
-    if (!campaign || campaign.status === 'paused') return;
+    if (!campaign || skipPipelineHandlers(campaign.status)) return;
 
     campaign.pipeline_state.draft_ids.push(draft_id);
     await this.checkMessagingTerminal(campaign);
+  }
+
+  private async onCampaignCompleted(payload: CampaignCompletedPayload): Promise<void> {
+    const {
+      campaign_id,
+      stats: { drafts_generated, drafts_rejected },
+    } = payload;
+    console.log(
+      `[PipelineService] campaign.completed (observed) for ${campaign_id} — drafts OK: ${drafts_generated}, terminal failures: ${drafts_rejected}`
+    );
   }
 
   private async onDraftFailed(payload: DraftFailedPayload): Promise<void> {
@@ -176,7 +213,7 @@ export class PipelineService {
     );
 
     const campaign = await this.findCampaign(campaign_id);
-    if (!campaign || campaign.status === 'paused') return;
+    if (!campaign || skipPipelineHandlers(campaign.status)) return;
 
     if (retry_count < config.retryLimit) {
       await this.broker.publish('messaging.requested', {
@@ -203,25 +240,40 @@ export class PipelineService {
   private async advanceStage(campaign: ICampaign, stage: PipelineStage): Promise<void> {
     campaign.pipeline_state.current_stage = stage;
     campaign.pipeline_state.stage_timestamps[stage] = new Date().toISOString();
+    if (ACTIVE_STAGE_STATUSES.includes(stage as CampaignStatus)) {
+      campaign.status = stage as CampaignStatus;
+    }
     await campaign.save();
     console.log(`[PipelineService] Campaign ${campaign.campaign_id} → stage: ${stage}`);
   }
 
-  /** All ranked prospects have a draft or a terminal draft failure. */
+  /** All messaging targets have a draft or a terminal draft failure. */
   private async checkMessagingTerminal(campaign: ICampaign): Promise<void> {
-    const { ranked_prospect_ids, draft_ids, failed_draft_ids } = campaign.pipeline_state;
-    const n = ranked_prospect_ids.length;
-    if (n === 0) {
+    const ps = campaign.pipeline_state;
+    const targetCount =
+      ps.messaging_target_ids !== undefined
+        ? ps.messaging_target_ids.length
+        : ps.ranked_prospect_ids.length;
+
+    if (targetCount === 0) {
+      if (ps.current_stage === 'messaging') {
+        await this.finalizeCampaignCompleted(campaign);
+      } else {
+        await campaign.save();
+      }
+      return;
+    }
+
+    const settled = ps.draft_ids.length + ps.failed_draft_ids.length;
+    if (settled < targetCount) {
       await campaign.save();
       return;
     }
 
-    const settled = draft_ids.length + failed_draft_ids.length;
-    if (settled < n) {
-      await campaign.save();
-      return;
-    }
+    await this.finalizeCampaignCompleted(campaign);
+  }
 
+  private async finalizeCampaignCompleted(campaign: ICampaign): Promise<void> {
     campaign.status = 'completed';
     campaign.pipeline_state.current_stage = 'completed';
     campaign.pipeline_state.stage_timestamps.completed = new Date().toISOString();

@@ -65,7 +65,7 @@ email_outreach/
 ## Notes
 
 **Services** (`src/<service>/`)  
-All inter-service communication is async via message queues — services never call each other directly.  
+All inter-service communication is async via message queues — services never call each other directly. **Routing:** workers consume **`*.requested`** queues only; the **Orchestrator** consumes **`.ready` / `.completed` / `.partial` / `.written` / `.failed`** events (see root `README.md` § Message Queues).  
 The Review Service and Send Service are removed. Review-related API endpoints are absorbed into `orchestrator`. The Messaging Service writes drafts directly to the user's email account (Gmail / Microsoft) and marks the task completed.
 
 **Messaging** (`src/local_infrastructure/`)  

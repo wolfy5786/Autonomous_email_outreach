@@ -1,8 +1,27 @@
 // ── Campaign Types ───────────────────────────────────────────────
 
-export type EmailChannel = 'smtp' | 'sendgrid' | 'postmark' | 'ses';
+/** OAuth-backed inbox used for draft creation (README § Campaign Record / POST body). */
+export type EmailAccountProvider = 'gmail' | 'microsoft';
 
-export type CampaignStatus = 'draft' | 'running' | 'review' | 'completed' | 'paused';
+/**
+ * Coarse campaign lifecycle — aligned with design_docs/orchestrator_service_role.md § Postgres status.
+ * `paused` is retained for operator pause/resume (PATCH); pipeline stages double as status while active.
+ */
+export type CampaignStatus =
+  | 'pending'
+  | 'planning'
+  | 'sourcing'
+  | 'prospecting'
+  | 'messaging'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface EmailAccount {
+  provider: EmailAccountProvider;
+  credentials_ref: string;
+}
 
 export type DraftStatus =
   | 'pending_review'
@@ -37,11 +56,13 @@ export interface SendWindow {
 }
 
 export interface CampaignConfig {
-  email_channel: EmailChannel;
-  email_channel_config: Record<string, unknown>;
+  email_account: EmailAccount;
   min_icp_score: number;
   freshness_days: number;
-  send_window: SendWindow;
+  /** Upper bound on `messaging.requested` fan-out per campaign. */
+  max_drafts: number;
+  /** Optional send-time window (PATCH-able); not required at create. */
+  send_window?: SendWindow;
 }
 
 export interface ICPDefinition {
@@ -170,6 +191,8 @@ export interface PipelineState {
   plan_id?: string;
   sourced_entity_ids: string[];
   ranked_prospect_ids: string[];
+  /** POC ids we actually issued `messaging.requested` for (respects `max_drafts`). */
+  messaging_target_ids?: string[];
   draft_ids: string[];
   sent_draft_ids: string[];
   failed_draft_ids: string[];

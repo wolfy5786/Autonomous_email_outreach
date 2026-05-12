@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         llm_model=settings.llm_model,
         rabbitmq_exchange=settings.rabbitmq_exchange,
         plan_requested_queue=settings.plan_requested_queue,
+        sourcing_requested_queue=settings.sourcing_requested_queue,
         broker_host=_safe_broker_host(settings.rabbitmq_url),
     )
 

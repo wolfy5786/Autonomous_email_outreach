@@ -41,7 +41,7 @@ The Orchestrator integrates with **both** persistence systems below. Queued work
 
 **Role:** System of record for **orchestration state per `campaign_id`**.
 
-- **Writes:** Status transitions when handling HTTP (create / cancel / resume) and when **consuming** pipeline events (`plan.ready`, `sourcing.completed`, `prospecting.completed`, `draft.written`, `draft.failed`, etc.).
+- **Writes:** Status transitions when handling HTTP (create / cancel / resume) and when **consuming** pipeline events (`plan.ready`, `sourcing.completed`, `sourcing.partial`, `prospecting.completed`, `draft.written`, `draft.failed`).
 - **Reads:** `GET /api/campaigns`, `GET /api/campaigns/:id`, and aggregations that depend on “where is this campaign in the pipeline?” rather than full document payloads.
 
 **Illustrative schema** (implementation may vary):
@@ -117,6 +117,8 @@ Inter-service traffic uses **RabbitMQ**. Application code publishes to a **topic
 | Dead-letter exchange | `email_outreach.dlx` | Routes failed messages to `*.dlq` queues |
 | Routing convention | Same as queue name | e.g. publish with routing key `plan.requested` to reach queue `plan.requested` |
 
+**Who consumes what:** `*.requested` queues are for **workers only** (each service consumes its own work queue). Names ending in `.ready`, `.completed`, `.partial`, `.written`, or `.failed` are **orchestrator-only** consumers; workers publish those events after completing (or partially completing) work. See also [`src/local_infrastructure/rabbit_mq/README.md`](../src/local_infrastructure/rabbit_mq/README.md).
+
 Local definitions (queues, bindings, DLQ wiring) live in [`definitions.json`](../src/local_infrastructure/rabbit_mq/definitions.json). Cloud deployments must preserve the **same logical names** ([`cloud_INFRASTRUCTURE.md`](cloud_INFRASTRUCTURE.md)).
 
 ---
@@ -135,6 +137,8 @@ The Orchestrator **produces** these events (subject to pipeline state and idempo
 
 **Publish pattern:** send to exchange `email_outreach.events` with **routing key equal to the queue/event name** (matches [`definitions.json`](../src/local_infrastructure/rabbit_mq/definitions.json) bindings).
 
+**When `*.requested` publishes happen:** The first `plan.requested` is typically emitted when a campaign is created via **HTTP** (`POST /api/campaigns`). Each subsequent `*.requested` is emitted when the Orchestrator **consumes** a worker completion event from §6 (for example after `plan.ready` → publish `sourcing.requested`). Workers do not publish `*.requested`; they consume it.
+
 ---
 
 ## 6. Queues: subscribe (consume)
@@ -152,7 +156,7 @@ The Orchestrator **consumes** these queues to advance or reconcile pipeline stat
 
 **`campaign.completed`:** Published **by** the Orchestrator; nothing else consumes it in the design (terminal fan-out for analytics or external hooks if added later).
 
-**Multi-consumer queues:** `plan.ready` (Orchestrator + Sourcing Service) and `prospecting.completed` (Orchestrator + Messaging Service) each have **more than one subscriber** on the same queue name in [README.md](../README.md). In RabbitMQ, **multiple consumers on the same queue share messages** (competing consumers). If the product requires **every** service to get a copy of an event, the architecture would use separate queues per consumer bound with the same routing key. Implementations should either (a) treat the Orchestrator as the sole consumer for coordination on a given queue and have workers use different queue names, or (b) accept the competing-consumer model and make handlers idempotent. Resolve this explicitly when implementing `src/orchestrator/`.
+**Single consumer per coordination queue:** For `plan.ready`, `sourcing.completed`, `prospecting.completed`, `sourcing.partial`, `draft.written`, and `draft.failed`, the **Orchestrator is the only subscriber**. Workers publish once and hand off; competing consumers on these queues are out of scope for v1. (**`campaign.completed`** is published by the Orchestrator and has no application consumer in v1 — it is not a coordination queue the Orchestrator consumes.)
 
 ---
 

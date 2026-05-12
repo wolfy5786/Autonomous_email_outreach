@@ -10,7 +10,7 @@ import sys
 
 import structlog
 
-from config import settings
+from config import SOURCING_CONSUMER_QUEUE, settings
 from logging_setup import configure_logging
 from pipeline import SourcingPipeline
 from publisher import SourcingAMQPPublisher
@@ -39,7 +39,7 @@ async def _run() -> None:
     log.info(
         "sourcing service starting",
         module=__name__,
-        queue=settings.sourcing_requested_queue,
+        queue=SOURCING_CONSUMER_QUEUE,
         broker_host=_safe_broker_host(settings.rabbitmq_url),
     )
 
@@ -60,7 +60,7 @@ async def _run() -> None:
         log.info(
             "sourcing service ready",
             module=__name__,
-            queue=settings.sourcing_requested_queue,
+            queue=SOURCING_CONSUMER_QUEUE,
         )
         await stop_event.wait()
     finally:

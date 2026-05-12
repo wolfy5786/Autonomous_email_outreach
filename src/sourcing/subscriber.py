@@ -12,7 +12,7 @@ import aio_pika
 import structlog
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 
-from config import Settings
+from config import SOURCING_CONSUMER_QUEUE, Settings
 from handlers import NonRetryableSourcingError, execute_sourcing_pipeline
 from pipeline import SourcingPipeline
 
@@ -79,7 +79,7 @@ class SourcingAMQPConsumer:
         log.info(
             "rabbitmq connecting",
             module=__name__,
-            queue=self._settings.sourcing_requested_queue,
+            queue=SOURCING_CONSUMER_QUEUE,
             broker_host=_safe_broker_host(self._settings.rabbitmq_url),
         )
         self._connection = await aio_pika.connect_robust(self._settings.rabbitmq_url)
@@ -96,7 +96,7 @@ class SourcingAMQPConsumer:
             raise RuntimeError("RabbitMQ channel is not open; call connect() first")
 
         queue = await self._channel.declare_queue(
-            self._settings.sourcing_requested_queue,
+            SOURCING_CONSUMER_QUEUE,
             passive=True,
         )
         self._consumer_tag = await queue.consume(
@@ -106,7 +106,7 @@ class SourcingAMQPConsumer:
         log.info(
             "rabbitmq consumer registered",
             module=__name__,
-            queue=self._settings.sourcing_requested_queue,
+            queue=SOURCING_CONSUMER_QUEUE,
             consumer_tag=self._consumer_tag,
         )
 
@@ -118,7 +118,7 @@ class SourcingAMQPConsumer:
 
     async def _handle_incoming(self, message: AbstractIncomingMessage) -> None:
         base_ctx = _correlation_fields(message)
-        logger = log.bind(module=__name__, queue=self._settings.sourcing_requested_queue, **base_ctx)
+        logger = log.bind(module=__name__, queue=SOURCING_CONSUMER_QUEUE, **base_ctx)
 
         payload, decode_exc = _decode_body(message.body, logger)
         if decode_exc is not None:

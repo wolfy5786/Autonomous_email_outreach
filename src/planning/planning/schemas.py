@@ -22,6 +22,7 @@ class SourcingRequestedEvent(BaseModel):
     model_config = ConfigDict(extra="ignore")
     campaign_id: str
     plan_id: str
+    target_entities: list[Any] = Field(default_factory=list)
 
 
 # --- Campaign ---

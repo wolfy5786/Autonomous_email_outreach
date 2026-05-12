@@ -37,6 +37,8 @@ The Planning Service turns a campaign’s **ICP** and **product profile** into o
 |----------|----------------|-------------------|
 | Plan Document (canonical + additive fields below) | MongoDB `plans` collection | Sourcing, Prospecting, Messaging |
 
+**Broker note (v1):** Planning **consumes** `plan.requested` and **publishes** `plan.ready`. The **Orchestrator** is the **only** consumer of `plan.ready`. Downstream workers read the plan from Mongo using `plan_id` carried on **`*.requested`** messages — not by subscribing to `plan.ready`.
+
 ---
 
 ## 3. Canonical vs additive fields
@@ -204,5 +206,5 @@ Canonical `email_tone` / `email_angle` in README remain authoritative for draft 
 
 - [`README.md`](README.md) — system architecture, services, Plan Record overview, queues, MongoDB storage
 - [`data_sourcing_map.md`](data_sourcing_map.md) — which sources exist, tiers, phases, fallback chains
-- [`docs/data-sourcing-service.md`](docs/data-sourcing-service.md) — Sourcing implementation: attribute maps, caches, queues, provenance
+- [`design_docs/data-sourcing-service.md`](design_docs/data-sourcing-service.md) — Sourcing implementation: attribute maps, caches, queues, provenance
 

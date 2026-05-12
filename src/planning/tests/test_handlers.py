@@ -31,7 +31,10 @@ async def test_handler_happy_path(fake_repo, fake_broker, valid_llm_output_dict,
     assert fake_repo.attached == [("c1", plan_id)]
     assert fake_broker.published == [
         (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": plan_id}),
-        (settings.sourcing_requested_queue, {"campaign_id": "c1", "plan_id": plan_id}),
+        (
+            settings.sourcing_requested_queue,
+            {"campaign_id": "c1", "plan_id": plan_id, "target_entities": []},
+        ),
     ]
 
 
@@ -54,7 +57,14 @@ async def test_handler_idempotency_skips_llm_when_plan_exists(
     assert llm_calls == []
     assert fake_broker.published == [
         (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": "11111111-1111-1111-1111-111111111111"}),
-        (settings.sourcing_requested_queue, {"campaign_id": "c1", "plan_id": "11111111-1111-1111-1111-111111111111"}),
+        (
+            settings.sourcing_requested_queue,
+            {
+                "campaign_id": "c1",
+                "plan_id": "11111111-1111-1111-1111-111111111111",
+                "target_entities": [],
+            },
+        ),
     ]
 
 
@@ -89,7 +99,10 @@ async def test_handler_duplicate_key_race_publishes_existing_id(
     expected_id = fake_repo.plans_by_campaign["c1"]["id"]
     assert fake_broker.published == [
         (settings.plan_ready_queue, {"campaign_id": "c1", "plan_id": expected_id}),
-        (settings.sourcing_requested_queue, {"campaign_id": "c1", "plan_id": expected_id}),
+        (
+            settings.sourcing_requested_queue,
+            {"campaign_id": "c1", "plan_id": expected_id, "target_entities": []},
+        ),
     ]
     assert fake_repo.attached == [("c1", expected_id)]
 

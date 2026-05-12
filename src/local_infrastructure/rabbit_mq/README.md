@@ -20,6 +20,10 @@ Do **not** rely on a separate compose file in this folder (it was removed in fav
 - Dead-letter exchange: `email_outreach.dlx`
 - Durable queue + DLQ for each pipeline event (see `definitions.json`), including `plan.requested`, `plan.ready`, `sourcing.requested`, and the rest.
 
+### Who publishes / consumes (v1)
+
+Queues are grouped in `definitions.json` as **work queues** (`*.requested`, consumed by workers) then **coordination queues** (`.ready`, `.completed`, `.partial`, `.written`, `.failed`, consumed **only** by the Orchestrator). **`campaign.completed`** is published by the Orchestrator; no application consumer in v1.
+
 ## Verify
 
 - AMQP: `amqp://localhost:5672` (from host)

@@ -456,7 +456,9 @@ All application queues are **classic or quorum queues** (not FIFO in the SQS sen
 
 **Retired** (consequence of removing Review Service and Send Service): `review.requested`, `review.completed`, `send.requested`, `send.completed`, `send.failed`, `messaging.completed`.
 
-**Access control:** use **RabbitMQ users and vhost permissions** (or Kubernetes Secrets mounted to each Deployment) so each service can only `configure|write|read` the exchanges and queues it needs — matching the publish/consume matrix in README § Message Queues. For Amazon MQ, place the broker in private subnets; for in-cluster RabbitMQ, restrict the management port to cluster-internal and use TLS where applicable.
+**Consumer routing (v1):** Worker deployments (**Planning, Sourcing, Prospecting, Messaging**) consume **only** their `*.requested` queue(s). The **Orchestrator** consumes **only** queues whose names end with `.ready`, `.completed`, `.partial`, `.written`, or `.failed` (plus any future coordination events following that pattern). Workers publish those coordination events; they do not consume them. **`campaign.completed`** has no application consumer in v1.
+
+**Access control:** use **RabbitMQ users and vhost permissions** (or Kubernetes Secrets mounted to each Deployment) so each service can only `configure|write|read` the exchanges and queues it needs — matching README § Message Queues (routing ownership + queue table). For Amazon MQ, place the broker in private subnets; for in-cluster RabbitMQ, restrict the management port to cluster-internal and use TLS where applicable.
 
 ---
 

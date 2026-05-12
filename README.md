@@ -164,7 +164,7 @@ npm run dev
 
 **Role:** Runs **validated company discovery**, **deep enrichment**, and **POC identity resolution** exactly as enumerated in [`data_sourcing_map.md`](data_sourcing_map.md): Tier A directories, Tier B hint feeds, enrichment via owned web crawl + filings + anchored SERP, etc. Implements the cache-first workflows below.
 
-**Implementation spec:** [`docs/data-sourcing-service.md`](docs/data-sourcing-service.md) — attribute source map, discovery vs enrichment, validation gates, crawl4ai + LLM extraction, provenance/hints in MongoDB, queues.
+**Implementation spec:** [`design_docs/data-sourcing-service.md`](design_docs/data-sourcing-service.md) — attribute source map, discovery vs enrichment, validation gates, crawl4ai + LLM extraction, provenance/hints in MongoDB, queues.
 
 **Responsibilities:**
 - Consume `sourcing.requested` events and merge any Plan-level `search_blocks` from [`planning_service_role.md`](planning_service_role.md).
@@ -295,7 +295,7 @@ Tier A directories (examples): Y Combinator roster, Product Hunt launches. T
 - Regulatory / reference signals (`SEC EDGAR Form D`)  
 - Anchored SERP/news pulls **after** canonical `(name,domain)`
 
-**Supporting automation:** Browser automation stacks (browser-use, Firecrawl, etc.) may accelerate targeted fetch workloads but stay within the crawl policy defined in [`docs/data-sourcing-service.md`](docs/data-sourcing-service.md).
+**Supporting automation:** Browser automation stacks (browser-use, Firecrawl, etc.) may accelerate targeted fetch workloads but stay within the crawl policy defined in [`design_docs/data-sourcing-service.md`](design_docs/data-sourcing-service.md).
 
 **Explicitly downstream from Sourcing:** Commercial email lookups (Apollo/Hunter) happen in Prospecting once personas exist.
 
@@ -408,7 +408,7 @@ campaign_record {
   icp:                  { ... ICP definition object ... }
   product_profile:      { ... product description object ... }
   plan_id:              string (ref → plan_record.id)
-  status:               enum [ draft, running, completed, paused ]
+  status:               enum [ pending, planning, sourcing, prospecting, messaging, paused, completed, failed, cancelled ]
   created_at:           ISO-8601 datetime
   config: {
     email_account: {
@@ -450,17 +450,25 @@ All inter-service communication is asynchronous via named message queues. Servic
 
 **Message broker:** **RabbitMQ** everywhere — local Docker (`src/local_infrastructure/rabbit_mq/`), in-cluster on EKS, or Amazon MQ — with durable queues, at-least-once delivery, and dead-letter queues. Logical names below map directly to RabbitMQ queues/exchanges per environment ([`cloud_INFRASTRUCTURE.md`](./cloud_INFRASTRUCTURE.md)).
 
+### Routing ownership
+
+- **`*.requested` queues** are consumed **only** by worker services (Planning, Sourcing, Prospecting, Messaging, respectively). The **Orchestrator publishes** them when a campaign advances to the next stage (or when issuing draft jobs).
+- **Events whose names end with `.ready`, `.completed`, `.partial`, `.written`, or `.failed`** are consumed **only by the Orchestrator** (one logical consumer per queue). Workers **publish** these after a stage finishes (or after a recoverable failure). **`sourcing.partial`** follows the same rule: Sourcing publishes it; the Orchestrator consumes it.
+- **`campaign.completed`** is published **by** the Orchestrator; there is **no application consumer** in v1 (terminal / future fan-out).
+
+Workers load shared context (for example the Plan Document) via **MongoDB** and payloads on **`*.requested`** messages — they do **not** attach as additional consumers on `plan.ready` or other orchestrator-only queues.
+
 ### Queue Definitions
 
 | Queue Name | Published By | Consumed By | Payload |
 |---|---|---|---|
 | `plan.requested` | Orchestrator | Planning Service | `{ campaign_id }` |
-| `plan.ready` | Planning Service | Orchestrator, Sourcing Service | `{ campaign_id, plan_id }` |
+| `plan.ready` | Planning Service | Orchestrator | `{ campaign_id, plan_id }` |
 | `sourcing.requested` | Orchestrator | Sourcing Service | `{ campaign_id, plan_id, target_entities[] }` |
 | `sourcing.completed` | Sourcing Service | Orchestrator | `{ campaign_id, entity_ids[] }` |
 | `sourcing.partial` | Sourcing Service | Orchestrator | `{ campaign_id, entity_id, missing_fields[] }` |
 | `prospecting.requested` | Orchestrator | Prospecting Service | `{ campaign_id, plan_id, entity_ids[] }` |
-| `prospecting.completed` | Prospecting Service | Orchestrator, Messaging Service | `{ campaign_id, ranked_prospects[] }` |
+| `prospecting.completed` | Prospecting Service | Orchestrator | `{ campaign_id, ranked_prospects[] }` |
 | `messaging.requested` | Orchestrator | Messaging Service | `{ campaign_id, poc_id }` |
 | `draft.written` | Messaging Service | Orchestrator | `{ campaign_id, draft_id, poc_id, email_draft_ref }` |
 | `draft.failed` | Messaging Service | Orchestrator | `{ campaign_id, draft_id, poc_id, error, retry_count }` |
@@ -496,7 +504,7 @@ All endpoints are HTTP/REST. No authentication is required. The Orchestrator Ser
 | `POST` | `/api/campaigns` | Create and trigger a new outreach campaign |
 | `GET` | `/api/campaigns` | List all campaigns with status |
 | `GET` | `/api/campaigns/:id` | Get campaign details and pipeline status |
-| `PATCH` | `/api/campaigns/:id` | Update campaign config (pause, resume) |
+| `PATCH` | `/api/campaigns/:id` | Pause (`{ "status": "paused" }`), resume (`{ "resume": true }`), or update config fields |
 | `DELETE` | `/api/campaigns/:id` | Cancel and archive a campaign |
 
 **`POST /api/campaigns` request body:**

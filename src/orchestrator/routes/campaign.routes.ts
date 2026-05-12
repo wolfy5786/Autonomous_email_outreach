@@ -46,24 +46,47 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // PATCH /api/campaigns/:id — Update campaign config (pause, resume, update send window)
+  // PATCH /api/campaigns/:id — Pause ({ status: "paused" }), resume ({ resume: true }), or patch config
   router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { status, config: configUpdate } = req.body;
+      const { status, resume, config: configUpdate } = req.body;
       const updates: Record<string, unknown> = {};
 
-      if (status) {
-        if (!['paused', 'running'].includes(status)) {
-          throw new AppError(400, 'Only paused/running transitions are allowed via PATCH');
+      const existing = await Campaign.findOne({ campaign_id: String(req.params.id) });
+      if (!existing) throw new AppError(404, 'Campaign not found');
+
+      if (resume === true) {
+        if (existing.status !== 'paused') {
+          throw new AppError(400, 'resume is only valid when campaign status is paused');
         }
-        updates.status = status;
+        const stage = existing.pipeline_state.current_stage;
+        if (!['planning', 'sourcing', 'prospecting', 'messaging'].includes(stage)) {
+          throw new AppError(400, 'Cannot resume from terminal pipeline stage');
+        }
+        updates.status = stage;
+      } else if (status !== undefined && status !== null) {
+        if (status !== 'paused') {
+          throw new AppError(
+            400,
+            'Only status "paused" is supported via PATCH (use { resume: true } to continue)'
+          );
+        }
+        updates.status = 'paused';
       }
 
       if (configUpdate) {
-        // Allow updating send_window and min_icp_score on a running campaign
         if (configUpdate.send_window) updates['config.send_window'] = configUpdate.send_window;
         if (configUpdate.min_icp_score != null)
           updates['config.min_icp_score'] = configUpdate.min_icp_score;
+        if (configUpdate.max_drafts != null) updates['config.max_drafts'] = configUpdate.max_drafts;
+        if (configUpdate.freshness_days != null)
+          updates['config.freshness_days'] = configUpdate.freshness_days;
+        if (configUpdate.email_account) updates['config.email_account'] = configUpdate.email_account;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        res.json(existing);
+        return;
       }
 
       const campaign = await Campaign.findOneAndUpdate(
@@ -84,12 +107,12 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     try {
       const campaign = await Campaign.findOneAndUpdate(
         { campaign_id: String(req.params.id) },
-        { $set: { status: 'paused' } },
+        { $set: { status: 'cancelled' } },
         { new: true }
       );
 
       if (!campaign) throw new AppError(404, 'Campaign not found');
-      res.json({ message: 'Campaign cancelled', campaign_id: String(req.params.id) });
+      res.json({ message: 'Campaign cancelled', campaign_id: String(req.params.id), status: 'cancelled' });
     } catch (err) {
       next(err);
     }

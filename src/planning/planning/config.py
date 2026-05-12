@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     mongo_url: str = "mongodb://localhost:27017"
     mongo_db: str = "email_outreach"
 
-    # Queues
+    # Queues — consume plan.requested; publish plan.ready + sourcing.requested
     plan_requested_queue: str = "plan.requested"
     plan_ready_queue: str = "plan.ready"
     sourcing_requested_queue: str = "sourcing.requested"

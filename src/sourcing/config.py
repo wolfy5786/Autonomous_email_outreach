@@ -3,6 +3,9 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Broker queue declared in ``src/local_infrastructure/rabbit_mq/definitions.json`` (ingress only).
+SOURCING_CONSUMER_QUEUE = "sourcing.requested"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -10,9 +13,10 @@ class Settings(BaseSettings):
     rabbitmq_url: str = Field(default="amqp://guest:guest@localhost:5672/")
     rabbit_prefetch: int = 10
     log_level: str = "INFO"
-    sourcing_requested_queue: str = "sourcing.requested"
     events_exchange: str = "email_outreach.events"
+    # Routing keys bound in ``src/local_infrastructure/rabbit_mq/definitions.json``.
     sourcing_completed_routing_key: str = "sourcing.completed"
+    prospecting_requested_routing_key: str = "prospecting.requested"
 
     # --- Enrichment (see design_docs/enrichment_redesign.md) ---
     serpapi_api_key: str | None = None

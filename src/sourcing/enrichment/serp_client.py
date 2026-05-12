@@ -97,3 +97,58 @@ async def find_company_linkedin_url(
         if _is_linkedin_url(hit.url):
             return hit
     return None
+
+
+# Hosts that are almost never the canonical company site — used by op 3 to
+# step past aggregators when the SERP ranks them above the company's own
+# domain. The design notes a domain-match heuristic as an open question; this
+# is the minimum filter to keep the top-result rule from picking obvious
+# directories.
+_NON_CANONICAL_HOSTS: tuple[str, ...] = (
+    "linkedin.com",
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+    "instagram.com",
+    "youtube.com",
+    "wikipedia.org",
+    "crunchbase.com",
+    "bloomberg.com",
+    "ycombinator.com",
+    "pitchbook.com",
+    "glassdoor.com",
+    "indeed.com",
+)
+
+
+def _is_non_canonical_host(url: str) -> bool:
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    if not host:
+        return True
+    return any(host == h or host.endswith("." + h) for h in _NON_CANONICAL_HOSTS)
+
+
+async def find_company_website_url(
+    company_name: str,
+    *,
+    api_key: str,
+    client: httpx.AsyncClient,
+    timeout_s: float = 30.0,
+) -> SerpHit | None:
+    """Return the top organic SERP hit that is not an obvious aggregator.
+
+    Operation 3 falls back to a SERP query when no company URL is known.
+    Per the design we take the top result, skipping social / news / directory
+    hosts that would never be the company's own landing page.
+    """
+    query = company_name
+    hits = await _serp_search_google(
+        query, api_key=api_key, client=client, timeout_s=timeout_s
+    )
+    for hit in hits:
+        if not _is_non_canonical_host(hit.url):
+            return hit
+    return None
