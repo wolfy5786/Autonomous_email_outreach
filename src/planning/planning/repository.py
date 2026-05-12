@@ -39,16 +39,22 @@ class PlanRepository:
             return False
 
     async def get_campaign(self, campaign_id: str) -> CampaignRecord | None:
-        # Lookup by either _id (our convention) or the `id` field, for flexibility
-        # with data seeded by other tooling.
+        # Three lookup paths, in priority order:
+        # 1. _id == campaign_id  → planning's own seed_campaign.py convention
+        # 2. id == campaign_id   → some legacy seed scripts
+        # 3. campaign_id == ...  → the TS orchestrator (mongoose) — it stores the
+        #    business id in a `campaign_id` field and leaves _id as an ObjectId.
         doc = await self._db["campaigns"].find_one({"_id": campaign_id})
         if doc is None:
             doc = await self._db["campaigns"].find_one({"id": campaign_id})
         if doc is None:
+            doc = await self._db["campaigns"].find_one({"campaign_id": campaign_id})
+        if doc is None:
             return None
-        # Normalise — schema expects `id`.
-        if "id" not in doc and "_id" in doc:
-            doc["id"] = doc["_id"]
+        # Normalise — schema expects `id`. Prefer the explicit campaign_id field;
+        # fall back to _id only if it's already a string.
+        if "id" not in doc:
+            doc["id"] = doc.get("campaign_id") or str(doc.get("_id"))
         return CampaignRecord.model_validate(doc)
 
     async def find_existing_plan_id(self, campaign_id: str) -> str | None:
