@@ -4,7 +4,7 @@ services:
   web:
     build:
       context: ./src
-      dockerfile: web/Dockerfile
+      dockerfile: web-ui/Dockerfile
       args:
         # Empty → the SPA hits /api/* on the same origin (nginx proxies to GATEWAY_URL).
         # Set to e.g. http://gateway:8000 to bypass the proxy at build time.
