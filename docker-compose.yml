@@ -74,6 +74,12 @@ services:
         condition: service_healthy
     env_file:
       - ./src/planning/.env
+    environment:
+      # LLM keys read from root .env so they're set in one place. These override
+      # any GEMINI_API_KEY / etc. in src/planning/.env (which should be empty).
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -117,6 +123,10 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB_NAME: email_outreach
+      # LLM keys from root .env — single source of truth.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8081:8081"
     restart: unless-stopped
