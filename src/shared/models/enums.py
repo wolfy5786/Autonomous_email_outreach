@@ -43,3 +43,19 @@ class HintCategory(StrEnum):
     EXPANSION = "expansion"
     CONTENT = "content"  # blog, podcast, talk
     OTHER = "other"
+
+
+class DraftStatus(StrEnum):
+    """Lifecycle of an email_draft_record (README §Data Schema)."""
+
+    GENERATING = "generating"
+    DRAFT_CREATED = "draft_created"
+    FAILED = "failed"
+
+
+class EmailProvider(StrEnum):
+    """Email account provider used by Messaging Service."""
+
+    GMAIL = "gmail"
+    MICROSOFT = "microsoft"
+    STUB = "stub"  # local/test only

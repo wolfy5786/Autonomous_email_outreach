@@ -6,6 +6,7 @@ from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from shared.models.company import CompanyRecord
+from shared.models.email_draft import EmailDraft
 from shared.models.hint import Hint
 from shared.models.plan import PlanRecord
 
@@ -32,6 +33,6 @@ async def init_db(
     database = client[db_name]
     await init_beanie(
         database=database,
-        document_models=[CompanyRecord, Hint, PlanRecord],
+        document_models=[CompanyRecord, Hint, PlanRecord, EmailDraft],
     )
     return client, database

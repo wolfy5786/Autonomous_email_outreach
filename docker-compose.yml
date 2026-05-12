@@ -20,6 +20,22 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  mongo:
+    image: mongo:7
+    container_name: email-outreach-mongo
+    hostname: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
   sourcing:
     build:
       context: ./src
@@ -30,10 +46,51 @@ services:
         condition: service_healthy
     env_file:
       - ./src/sourcing/.env
-      - ./src/local_infrastructure/rabbit_mq/.env  # ← add this
+      - ./src/local_infrastructure/rabbit_mq/.env
     environment:
       BROKER_TYPE: rabbitmq
     restart: unless-stopped
 
+  planning:
+    build:
+      context: .
+      dockerfile: src/planning/Dockerfile
+    container_name: email-outreach-planning
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    env_file:
+      - ./src/planning/.env
+      - ./src/local_infrastructure/rabbit_mq/.env
+    environment:
+      BROKER_TYPE: rabbitmq
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      MONGO_URL: mongodb://mongo:27017
+    restart: unless-stopped
+
+  messaging:
+    build:
+      context: ./src
+      dockerfile: messaging/Dockerfile
+    container_name: email-outreach-messaging
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    env_file:
+      - ./src/messaging/.env
+      - ./src/local_infrastructure/rabbit_mq/.env
+    environment:
+      BROKER_TYPE: rabbitmq
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      MONGO_URL: mongodb://mongo:27017
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
 volumes:
   rabbitmq_data:
+  mongo_data:
