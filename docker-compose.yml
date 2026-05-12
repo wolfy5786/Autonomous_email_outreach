@@ -38,6 +38,27 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Orchestrator-owned: per-campaign pipeline status (orchestrator_service_role.md §2.1).
+  postgres:
+    image: postgres:16-alpine
+    container_name: email-outreach-postgres
+    hostname: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: ${POSTGRES_DB:-email_outreach}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orchestrator} -d ${POSTGRES_DB:-email_outreach}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   planning:
     build:
       context: .
@@ -78,3 +99,4 @@ services:
 volumes:
   rabbitmq_data:
   mongo_data:
+  postgres_data:

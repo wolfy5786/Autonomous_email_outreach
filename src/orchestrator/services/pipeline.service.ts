@@ -14,6 +14,7 @@ import {
 } from '../../shared/types';
 import { config } from '../config';
 import type { DraftWrittenPayload, DraftFailedPayload } from '../types/queue-payloads';
+import { CampaignStatusRepository } from '../postgres';
 
 /** Statuses where downstream events must not advance or mutate pipeline progress. */
 const NONPROCESSING_STATUSES: CampaignStatus[] = ['paused', 'cancelled', 'completed', 'failed'];
@@ -49,7 +50,10 @@ type OrchestratorInboundQueue = (typeof ORCHESTRATOR_INBOUND_QUEUE_NAMES)[number
  * No business logic lives here — only coordination.
  */
 export class PipelineService {
-  constructor(private readonly broker: MessageBroker) {}
+  constructor(
+    private readonly broker: MessageBroker,
+    private readonly statusRepo: CampaignStatusRepository
+  ) {}
 
   // ── Subscriptions ────────────────────────────────────────────
 
@@ -94,6 +98,14 @@ export class PipelineService {
           planning: new Date().toISOString(),
         },
       },
+    });
+
+    // Mirror initial status into Postgres (orchestrator_service_role.md §2.1).
+    await this.statusRepo.insert({
+      campaign_id: campaignId,
+      status: 'planning',
+      current_stage: 'planning',
+      plan_id: null,
     });
 
     // Kick off the pipeline by requesting a plan
@@ -161,11 +173,16 @@ export class PipelineService {
     const campaign = await this.findCampaign(campaign_id);
     if (!campaign || skipPipelineHandlers(campaign.status)) return;
 
-    const qualifiedIds = ranked_prospects
-      .filter((p) => p.score >= campaign.config.min_icp_score)
-      .map((p) => p.poc_id);
+    const qualified = ranked_prospects.filter(
+      (p) => p.score >= campaign.config.min_icp_score
+    );
+    const qualifiedIds = qualified.map((p) => p.poc_id);
 
     campaign.pipeline_state.ranked_prospect_ids = qualifiedIds;
+    const scores: Record<string, number> =
+      campaign.pipeline_state.ranked_prospect_scores ?? {};
+    for (const p of qualified) scores[p.poc_id] = p.score;
+    campaign.pipeline_state.ranked_prospect_scores = scores;
 
     const cap = Math.floor(campaign.config.max_drafts);
     const cappedIds = cap > 0 ? qualifiedIds.slice(0, cap) : qualifiedIds;
@@ -228,6 +245,10 @@ export class PipelineService {
     if (!campaign.pipeline_state.failed_draft_ids.includes(marker)) {
       campaign.pipeline_state.failed_draft_ids.push(marker);
     }
+    await this.statusRepo.setLastError(
+      campaign_id,
+      `draft.failed poc=${poc_id}: ${error}`
+    );
     await this.checkMessagingTerminal(campaign);
   }
 
@@ -244,6 +265,15 @@ export class PipelineService {
       campaign.status = stage as CampaignStatus;
     }
     await campaign.save();
+
+    // Mirror transition into Postgres so list/status APIs can read cheaply (§2.1).
+    await this.statusRepo.updateStage(
+      campaign.campaign_id,
+      campaign.status,
+      stage,
+      campaign.pipeline_state.plan_id ?? campaign.plan_id ?? null
+    );
+
     console.log(`[PipelineService] Campaign ${campaign.campaign_id} → stage: ${stage}`);
   }
 
@@ -278,6 +308,9 @@ export class PipelineService {
     campaign.pipeline_state.current_stage = 'completed';
     campaign.pipeline_state.stage_timestamps.completed = new Date().toISOString();
     await campaign.save();
+
+    // Reflect terminal state in Postgres (§2.1).
+    await this.statusRepo.updateStage(campaign.campaign_id, 'completed', 'completed');
 
     const stats = this.computeStats(campaign);
     await this.broker.publish('campaign.completed', {

@@ -191,6 +191,8 @@ export interface PipelineState {
   plan_id?: string;
   sourced_entity_ids: string[];
   ranked_prospect_ids: string[];
+  /** ICP score per poc_id from `prospecting.completed` — used by GET /api/prospects/:id. */
+  ranked_prospect_scores?: Record<string, number>;
   /** POC ids we actually issued `messaging.requested` for (respects `max_drafts`). */
   messaging_target_ids?: string[];
   draft_ids: string[];

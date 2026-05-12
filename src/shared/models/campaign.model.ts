@@ -30,6 +30,7 @@ const PipelineStateSchema = new Schema(
     plan_id: { type: String, default: null },
     sourced_entity_ids: { type: [String], default: [] },
     ranked_prospect_ids: { type: [String], default: [] },
+    ranked_prospect_scores: { type: Schema.Types.Mixed, default: {} },
     messaging_target_ids: { type: [String] },
     draft_ids: { type: [String], default: [] },
     sent_draft_ids: { type: [String], default: [] },

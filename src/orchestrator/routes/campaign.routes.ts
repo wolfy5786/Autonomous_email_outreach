@@ -3,8 +3,12 @@ import { PipelineService } from '../services/pipeline.service';
 import { Campaign } from '../../shared/models';
 import { AppError } from '../middleware/error-handler';
 import { CreateCampaignPayload } from '../../shared/types';
+import { CampaignStatusRepository } from '../postgres';
 
-export function createCampaignRouter(pipelineService: PipelineService): Router {
+export function createCampaignRouter(
+  pipelineService: PipelineService,
+  statusRepo: CampaignStatusRepository
+): Router {
   const router = Router();
 
   // POST /api/campaigns — Create and trigger a new outreach campaign
@@ -23,24 +27,56 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
     }
   });
 
-  // GET /api/campaigns — List all campaigns with status
+  // GET /api/campaigns — List all campaigns. Status comes from Postgres (§2.1),
+  // names/config from Mongo (§2.2); joined on campaign_id.
   router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
     try {
-      const campaigns = await Campaign.find()
-        .sort({ created_at: -1 })
-        .select('-__v');
-      res.json(campaigns);
+      const statusRows = await statusRepo.list();
+      const ids = statusRows.map((r) => r.campaign_id);
+      const docs = await Campaign.find({ campaign_id: { $in: ids } })
+        .select('campaign_id name created_at updated_at')
+        .lean();
+      const byId = new Map(docs.map((d) => [d.campaign_id, d]));
+
+      const out = statusRows.map((s) => {
+        const doc = byId.get(s.campaign_id);
+        return {
+          campaign_id: s.campaign_id,
+          name: doc?.name ?? null,
+          status: s.status,
+          current_stage: s.current_stage,
+          plan_id: s.plan_id,
+          last_error: s.last_error,
+          created_at: doc?.created_at ?? s.created_at,
+          updated_at: s.updated_at,
+        };
+      });
+      res.json(out);
     } catch (err) {
       next(err);
     }
   });
 
-  // GET /api/campaigns/:id — Get campaign details and pipeline status
+  // GET /api/campaigns/:id — Combine Postgres status (§2.1) with Mongo content (§2.2).
   router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const campaign = await Campaign.findOne({ campaign_id: String(req.params.id) }).select('-__v');
-      if (!campaign) throw new AppError(404, 'Campaign not found');
-      res.json(campaign);
+      const id = String(req.params.id);
+      const [statusRow, doc] = await Promise.all([
+        statusRepo.find(id),
+        Campaign.findOne({ campaign_id: id }).select('-__v'),
+      ]);
+      if (!doc && !statusRow) throw new AppError(404, 'Campaign not found');
+
+      res.json({
+        campaign_id: id,
+        status: statusRow?.status ?? doc?.status ?? null,
+        current_stage:
+          statusRow?.current_stage ?? doc?.pipeline_state?.current_stage ?? null,
+        plan_id: statusRow?.plan_id ?? doc?.plan_id ?? null,
+        last_error: statusRow?.last_error ?? null,
+        updated_at: statusRow?.updated_at ?? doc?.updated_at ?? null,
+        campaign: doc,
+      });
     } catch (err) {
       next(err);
     }
@@ -49,10 +85,11 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
   // PATCH /api/campaigns/:id — Pause ({ status: "paused" }), resume ({ resume: true }), or patch config
   router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const id = String(req.params.id);
       const { status, resume, config: configUpdate } = req.body;
       const updates: Record<string, unknown> = {};
 
-      const existing = await Campaign.findOne({ campaign_id: String(req.params.id) });
+      const existing = await Campaign.findOne({ campaign_id: id });
       if (!existing) throw new AppError(404, 'Campaign not found');
 
       if (resume === true) {
@@ -90,12 +127,18 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
       }
 
       const campaign = await Campaign.findOneAndUpdate(
-        { campaign_id: String(req.params.id) },
+        { campaign_id: id },
         { $set: updates },
         { new: true }
       );
 
       if (!campaign) throw new AppError(404, 'Campaign not found');
+
+      // Mirror status changes into Postgres.
+      if (updates.status !== undefined) {
+        await statusRepo.setStatus(id, updates.status as never);
+      }
+
       res.json(campaign);
     } catch (err) {
       next(err);
@@ -105,14 +148,16 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
   // DELETE /api/campaigns/:id — Cancel and archive a campaign
   router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const id = String(req.params.id);
       const campaign = await Campaign.findOneAndUpdate(
-        { campaign_id: String(req.params.id) },
+        { campaign_id: id },
         { $set: { status: 'cancelled' } },
         { new: true }
       );
 
       if (!campaign) throw new AppError(404, 'Campaign not found');
-      res.json({ message: 'Campaign cancelled', campaign_id: String(req.params.id), status: 'cancelled' });
+      await statusRepo.setStatus(id, 'cancelled');
+      res.json({ message: 'Campaign cancelled', campaign_id: id, status: 'cancelled' });
     } catch (err) {
       next(err);
     }
@@ -121,9 +166,11 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
   // GET /api/campaigns/:id/stats — Draft counts and success rate (no send/approval workflow)
   router.get('/:id/stats', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const campaign = await Campaign.findOne({ campaign_id: String(req.params.id) });
+      const id = String(req.params.id);
+      const campaign = await Campaign.findOne({ campaign_id: id });
       if (!campaign) throw new AppError(404, 'Campaign not found');
 
+      const statusRow = await statusRepo.find(id);
       const ps = campaign.pipeline_state;
       const totalProspects = ps.ranked_prospect_ids.length;
       const draftsWritten = ps.draft_ids.length;
@@ -131,8 +178,8 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
 
       res.json({
         campaign_id: campaign.campaign_id,
-        status: campaign.status,
-        current_stage: ps.current_stage,
+        status: statusRow?.status ?? campaign.status,
+        current_stage: statusRow?.current_stage ?? ps.current_stage,
         stats: {
           total_prospects: totalProspects,
           drafts_written: draftsWritten,
@@ -149,15 +196,16 @@ export function createCampaignRouter(pipelineService: PipelineService): Router {
   // GET /api/campaigns/:id/prospects — List scored prospects (delegates to NoSQL query)
   router.get('/:id/prospects', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const campaign = await Campaign.findOne({ campaign_id: String(req.params.id) });
+      const id = String(req.params.id);
+      const campaign = await Campaign.findOne({ campaign_id: id });
       if (!campaign) throw new AppError(404, 'Campaign not found');
 
-      // Return the ranked prospect IDs from pipeline state.
-      // Full prospect records would be fetched from the persons/companies collections.
+      const ids = campaign.pipeline_state.ranked_prospect_ids;
+      const scores = campaign.pipeline_state.ranked_prospect_scores ?? {};
       res.json({
         campaign_id: campaign.campaign_id,
-        prospect_ids: campaign.pipeline_state.ranked_prospect_ids,
-        count: campaign.pipeline_state.ranked_prospect_ids.length,
+        count: ids.length,
+        prospects: ids.map((poc_id) => ({ poc_id, score: scores[poc_id] ?? null })),
       });
     } catch (err) {
       next(err);

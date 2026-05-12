@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { config } from './config';
 import { createApp } from './app';
 import { EventsBroker } from './rabbit/events-broker';
+import { CampaignStatusRepository, PostgresClient } from './postgres';
 
 async function main(): Promise<void> {
   // ── Connect to MongoDB ─────────────────────────────────────
@@ -9,12 +10,20 @@ async function main(): Promise<void> {
   await mongoose.connect(config.mongoUri);
   console.log('[main] MongoDB connected.');
 
+  // ── Connect to PostgreSQL (campaign status — §2.1) ─────────
+  console.log(`[main] Connecting to PostgreSQL at ${config.postgresUrl}…`);
+  const pg = new PostgresClient(config.postgresUrl);
+  await pg.connect();
+  const statusRepo = new CampaignStatusRepository(pg);
+  await statusRepo.ensureSchema();
+  console.log('[main] PostgreSQL connected; campaign_status schema ready.');
+
   // ── Create message broker ──────────────────────────────────
   const broker = new EventsBroker(config.rabbitmqUrl);
   console.log('[main] EventsBroker (RabbitMQ topic exchange) ready.');
 
   // ── Build Express app ──────────────────────────────────────
-  const { app, pipelineService } = createApp(broker);
+  const { app, pipelineService } = createApp(broker, statusRepo);
 
   // ── Start queue listeners ──────────────────────────────────
   await pipelineService.startListening();
@@ -42,6 +51,7 @@ async function main(): Promise<void> {
     console.log(`\n[main] Received ${signal}. Shutting down…`);
     await broker.disconnect();
     await mongoose.disconnect();
+    await pg.disconnect();
     process.exit(0);
   };
 
