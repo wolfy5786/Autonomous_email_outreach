@@ -96,6 +96,28 @@ services:
       MONGO_DB_NAME: email_outreach
     restart: unless-stopped
 
+  messaging:
+    build:
+      context: ./src
+      dockerfile: messaging/Dockerfile
+    container_name: email-outreach-messaging
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    env_file:
+      - ./src/messaging/.env
+      - ./src/local_infrastructure/rabbit_mq/.env
+    environment:
+      BROKER_TYPE: rabbitmq
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB_NAME: email_outreach
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
 volumes:
   rabbitmq_data:
   mongo_data:

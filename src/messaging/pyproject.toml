@@ -1,0 +1,58 @@
+[project]
+name = "messaging"
+version = "0.1.0"
+description = "Messaging service — generates personalized email drafts and writes them to the user's mailbox"
+requires-python = ">=3.11,<3.13"
+readme = "README.md"
+
+dependencies = [
+    "aio-pika>=9.4,<10",
+    "motor>=3.5,<4",
+    "pymongo>=4.8,<5",
+    "litellm>=1.51,<2",
+    "pydantic>=2.8,<3",
+    "pydantic-settings>=2.4,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "tenacity>=9.0,<10",
+    "structlog>=24.4,<25",
+    "beanie>=1.26,<2",
+    "google-auth>=2.34,<3",
+    "google-auth-oauthlib>=1.2,<2",
+    "google-api-python-client>=2.140,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=0.24,<1",
+    "pytest-mock>=3.14,<4",
+    "mongomock-motor>=0.0.34,<0.1",
+    "ruff>=0.6,<1",
+    "mypy>=1.11,<2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["messaging"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = [".", "../local_infrastructure/..", "../"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true

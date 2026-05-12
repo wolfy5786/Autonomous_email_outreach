@@ -6,7 +6,10 @@ from shared.models.company import (
     Headquarters,
 )
 from shared.models.db import init_db
+from shared.models.email_draft import EmailDraft, LLMUsage
 from shared.models.enums import (
+    DraftStatus,
+    EmailProvider,
     FundingStage,
     HintCategory,
     ScrapeMode,
@@ -18,11 +21,15 @@ from shared.models.plan import PlanRecord
 __all__ = (
     "AttributeProvenance",
     "CompanyRecord",
+    "DraftStatus",
+    "EmailDraft",
+    "EmailProvider",
+    "FundingStage",
     "Headquarters",
     "Hint",
     "HintCategory",
+    "LLMUsage",
     "PlanRecord",
-    "FundingStage",
     "ScrapeMode",
     "SourceType",
     "init_db",
