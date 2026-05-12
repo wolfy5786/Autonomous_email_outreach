@@ -20,12 +20,14 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  # Publish Mongo on the host loopback only so local GUIs (Compass, mongosh, IDE)
+  # use mongodb://127.0.0.1:<port>/ — other containers still use hostname `mongo`.
   mongo:
     image: mongo:7
     container_name: email-outreach-mongo
     hostname: mongo
     ports:
-      - "27017:27017"
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -66,7 +68,9 @@ services:
       - ./src/sourcing/.env
       - ./src/local_infrastructure/rabbit_mq/.env
     environment:
-      BROKER_TYPE: rabbitmq
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBIT_PREFETCH: "10"
+      LOG_LEVEL: INFO
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB_NAME: email_outreach
     restart: unless-stopped

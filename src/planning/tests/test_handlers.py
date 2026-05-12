@@ -2,9 +2,8 @@ from typing import Any
 
 import pytest
 
-from local_infrastructure.factory.broker_interface import NonRetryableError
 from planning.config import settings
-from planning.handlers import handle_plan_requested
+from planning.handlers import NonRetryableError, handle_plan_requested
 from planning.schemas import CampaignRecord, LLMPlanOutput, LLMUsage
 
 
@@ -24,7 +23,7 @@ async def test_handler_happy_path(fake_repo, fake_broker, valid_llm_output_dict,
         {"campaign_id": "c1"},
         repo=fake_repo,
         llm_fn=_make_llm_fn(valid_llm_output_dict),
-        broker=fake_broker,
+        publisher=fake_broker,
     )
 
     assert "c1" in fake_repo.plans_by_campaign
@@ -49,7 +48,7 @@ async def test_handler_idempotency_skips_llm_when_plan_exists(
         return LLMPlanOutput.model_validate(valid_llm_output_dict), LLMUsage()
 
     await handle_plan_requested(
-        {"campaign_id": "c1"}, repo=fake_repo, llm_fn=counting_llm, broker=fake_broker
+        {"campaign_id": "c1"}, repo=fake_repo, llm_fn=counting_llm, publisher=fake_broker
     )
 
     assert llm_calls == []
@@ -67,7 +66,7 @@ async def test_handler_campaign_missing_raises_non_retryable(
             {"campaign_id": "nope"},
             repo=fake_repo,
             llm_fn=_make_llm_fn(valid_llm_output_dict),
-            broker=fake_broker,
+            publisher=fake_broker,
         )
 
     assert fake_broker.published == []
@@ -83,7 +82,7 @@ async def test_handler_duplicate_key_race_publishes_existing_id(
         {"campaign_id": "c1"},
         repo=fake_repo,
         llm_fn=_make_llm_fn(valid_llm_output_dict),
-        broker=fake_broker,
+        publisher=fake_broker,
     )
 
     # Whatever plan_id the fake repo synthesized during the race is what we publish.
@@ -105,5 +104,5 @@ async def test_handler_invalid_event_raises(fake_repo, fake_broker, valid_llm_ou
             {},
             repo=fake_repo,
             llm_fn=_make_llm_fn(valid_llm_output_dict),
-            broker=fake_broker,
+            publisher=fake_broker,
         )

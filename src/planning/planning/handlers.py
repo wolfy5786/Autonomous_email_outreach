@@ -1,13 +1,11 @@
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 import structlog
 from pymongo.errors import DuplicateKeyError
-
-from local_infrastructure.factory.broker_interface import MessageBroker, NonRetryableError
 
 from .config import settings
 from .schemas import (
@@ -24,11 +22,19 @@ log = structlog.get_logger(__name__)
 LLMFn = Callable[[dict[str, Any], dict[str, Any]], Awaitable[tuple[LLMPlanOutput, LLMUsage]]]
 
 
+class NonRetryableError(Exception):
+    """Permanent failure — message must not be requeued (routes to DLQ via x-dead-letter)."""
+
+
+class EventPublisher(Protocol):
+    async def publish(self, routing_key: str, message: dict[str, Any]) -> None: ...
+
+
 async def handle_plan_requested(
     message: dict[str, Any],
     repo: Any,  # PlanRepository — typed Any to allow test doubles
     llm_fn: LLMFn,
-    broker: MessageBroker,
+    publisher: EventPublisher,
 ) -> None:
     """Consume a plan.requested event end-to-end.
 
@@ -46,11 +52,11 @@ async def handle_plan_requested(
     existing = await repo.find_existing_plan_id(event.campaign_id)
     if existing is not None:
         logger.info("plan already exists, republishing plan.ready", plan_id=existing)
-        await broker.publish(
+        await publisher.publish(
             settings.plan_ready_queue,
             PlanReadyEvent(campaign_id=event.campaign_id, plan_id=existing).model_dump(),
         )
-        await broker.publish(
+        await publisher.publish(
             settings.sourcing_requested_queue,
             SourcingRequestedEvent(campaign_id=event.campaign_id, plan_id=existing).model_dump(),
         )
@@ -65,7 +71,7 @@ async def handle_plan_requested(
     plan = PlanRecord(
         id=uuid4(),
         campaign_id=event.campaign_id,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         llm_model=settings.llm_model,
         llm_usage=usage,
         **llm_out.model_dump(),
@@ -86,11 +92,11 @@ async def handle_plan_requested(
     UUID(plan_id_str)
 
     await repo.attach_plan_to_campaign(event.campaign_id, plan_id_str)
-    await broker.publish(
+    await publisher.publish(
         settings.plan_ready_queue,
         PlanReadyEvent(campaign_id=event.campaign_id, plan_id=plan_id_str).model_dump(),
     )
-    await broker.publish(
+    await publisher.publish(
         settings.sourcing_requested_queue,
         SourcingRequestedEvent(campaign_id=event.campaign_id, plan_id=plan_id_str).model_dump(),
     )

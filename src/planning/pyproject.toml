@@ -38,7 +38,7 @@ packages = ["planning"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = [".", "../local_infrastructure/.."]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 110

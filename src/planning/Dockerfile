@@ -38,11 +38,8 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy service code and shared broker code. Layout on disk:
-#   /app/planning/...                    <- the service
-#   /app/local_infrastructure/...        <- the shared broker package
+# Service package layout: /app/planning/...
 COPY src/planning/planning /app/planning
-COPY src/local_infrastructure /app/local_infrastructure
 
 USER app
 EXPOSE 8080

@@ -1,15 +1,13 @@
-import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pytest
 
-# Make both `planning` and `local_infrastructure` importable from tests.
+# Make `planning` importable when pytest is run from the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "src" / "planning"))
 
 
@@ -65,16 +63,13 @@ def valid_llm_output_dict() -> dict[str, Any]:
 
 
 class FakeBroker:
-    """Minimal MessageBroker double that records published messages."""
+    """Minimal EventPublisher double that records published messages."""
 
     def __init__(self) -> None:
         self.published: list[tuple[str, dict[str, Any]]] = []
 
-    async def publish(self, topic: str, message: dict[str, Any]) -> None:
-        self.published.append((topic, message))
-
-    async def subscribe(self, topic: str, handler: Any) -> None:  # pragma: no cover
-        raise NotImplementedError
+    async def publish(self, routing_key: str, message: dict[str, Any]) -> None:
+        self.published.append((routing_key, message))
 
     async def disconnect(self) -> None:  # pragma: no cover
         pass
@@ -122,4 +117,4 @@ def fake_repo() -> FakeRepo:
 
 @pytest.fixture
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

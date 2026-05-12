@@ -1,18 +1,17 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import AsyncIterator
 
 import structlog
 import uvicorn
 from fastapi import FastAPI, Response
-
-from local_infrastructure.factory.broker_factory import create_broker
 
 from .config import settings
 from .handlers import handle_plan_requested
 from .llm import generate_plan
 from .logging_setup import configure_logging
 from .repository import PlanRepository
+from .subscriber import PlanningAMQPClient, _safe_broker_host
 
 log = structlog.get_logger(__name__)
 
@@ -22,27 +21,33 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(settings.log_level)
     log.info(
         "planning service starting",
-        broker=settings.broker_type,
+        module=__name__,
         mongo_db=settings.mongo_db,
         llm_model=settings.llm_model,
+        rabbitmq_exchange=settings.rabbitmq_exchange,
+        plan_requested_queue=settings.plan_requested_queue,
+        broker_host=_safe_broker_host(settings.rabbitmq_url),
     )
 
     repo = PlanRepository(settings.mongo_url, settings.mongo_db)
     await repo.bootstrap_indexes()
 
-    broker = create_broker()
-    handler = partial(handle_plan_requested, repo=repo, llm_fn=generate_plan, broker=broker)
-    await broker.subscribe(settings.plan_requested_queue, handler)
-    log.info("subscribed to queue", queue=settings.plan_requested_queue)
+    amqp = PlanningAMQPClient(settings)
+    await amqp.connect()
+    handler = partial(handle_plan_requested, repo=repo, llm_fn=generate_plan, publisher=amqp)
+    await amqp.start_consumer(handler)
+    log.info("subscribed to queue", module=__name__, queue=settings.plan_requested_queue)
 
     app.state.repo = repo
-    app.state.broker = broker
+    app.state.amqp_client = amqp
     try:
         yield
     finally:
-        log.info("planning service shutting down")
+        log.info("planning service shutting down", module=__name__)
         try:
-            await broker.disconnect()
+            await amqp.disconnect()
+        except Exception:
+            log.error("planning service amqp disconnect failed", module=__name__, exc_info=True)
         finally:
             await repo.close()
 

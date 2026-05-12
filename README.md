@@ -97,6 +97,14 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Docker development stack (local)
+
+- **Single compose file:** run everything from the repository root with [docker-compose.yml](docker-compose.yml) (RabbitMQ, MongoDB, and app services share the default Compose network).
+- **RabbitMQ** runs as the **broker container** only. Exchanges and queues are declared by loading [src/local_infrastructure/rabbit_mq/definitions.json](src/local_infrastructure/rabbit_mq/definitions.json) into that container via a volume mount. That directory is **infrastructure config** for the server process, not a Python messaging library. Application services are **AMQP clients** and connect with `RABBITMQ_URL` (from the host use `localhost`; from another container use the hostname `rabbitmq`).
+- **MongoDB** is optional per service; set `MONGO_URI` / `MONGO_DB_NAME` as needed. The root compose wires typical values for local dev.
+- **Environment:** compose `env_file` entries point at per-service `.env` files under `src/<service>/`. Commit only `.env.example` files with placeholders ([Ai_rules.md](Ai_rules.md)).
+- **Service Dockerfiles** (for example [src/sourcing/Dockerfile](src/sourcing/Dockerfile)) copy application code such as `shared/` and the service package. Do **not** bake `local_infrastructure` into service images to “ship” the broker — the broker is the separate RabbitMQ service.
+
 ---
 
 ## Services

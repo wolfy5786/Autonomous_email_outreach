@@ -1,68 +1,86 @@
 """
-Sourcing service: consumes ``sourcing.requested`` jobs from RabbitMQ and runs the pipeline slice.
+Sourcing service: consumes ``sourcing.requested`` from RabbitMQ (Docker) and runs the pipeline.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import signal
 import sys
-from typing import Any
 
-from messaging.broker_factory import create_broker
-from messaging.broker_interface import BrokerInterface
-from motor.motor_asyncio import AsyncIOMotorClient
+import structlog
+
+from config import settings
+from logging_setup import configure_logging
 from pipeline import SourcingPipeline
 from shared.models.db import init_db
+from subscriber import SourcingAMQPConsumer, _safe_broker_host
 
-QUEUE_SOURCING_REQUESTED = "sourcing.requested"
+log = structlog.get_logger(__name__)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    stream=sys.stdout,
-)
-logger = logging.getLogger("sourcing")
+
+def _install_signal_handlers(stop_event: asyncio.Event) -> None:
+    loop = asyncio.get_running_loop()
+
+    def _set_stop() -> None:
+        stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _set_stop)
+        except NotImplementedError:
+            # Windows
+            signal.signal(sig, lambda *_a, **_k: stop_event.set())
+
+
+async def _run() -> None:
+    configure_logging(settings.log_level)
+    log.info(
+        "sourcing service starting",
+        module=__name__,
+        queue=settings.sourcing_requested_queue,
+        broker_host=_safe_broker_host(settings.rabbitmq_url),
+    )
+
+    mongo_client = None
+    pipeline = SourcingPipeline()
+    consumer = SourcingAMQPConsumer(settings, pipeline)
+    stop_event = asyncio.Event()
+    _install_signal_handlers(stop_event)
+
+    try:
+        mongo_client, database = await init_db()
+        log.info("mongo initialized", module=__name__, db_name=database.name)
+
+        await consumer.connect()
+        await consumer.start_consumer()
+        log.info(
+            "sourcing service ready",
+            module=__name__,
+            queue=settings.sourcing_requested_queue,
+        )
+        await stop_event.wait()
+    finally:
+        log.info("sourcing service shutting down", module=__name__)
+        try:
+            await consumer.disconnect()
+        except Exception:
+            log.error("sourcing service consumer disconnect failed", module=__name__, exc_info=True)
+        finally:
+            if mongo_client is not None:
+                try:
+                    mongo_client.close()
+                except Exception:
+                    log.error("mongo client close failed", module=__name__, exc_info=True)
+                else:
+                    log.info("mongo client closed", module=__name__)
 
 
 def main() -> None:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    mongo_client: AsyncIOMotorClient | None = None
-
-    async def _startup_db() -> None:
-        nonlocal mongo_client
-        client, database = await init_db()
-        mongo_client = client
-        logger.info("stage=mongo_initialized db_name=%s", database.name)
-
-    loop.run_until_complete(_startup_db())
-
-    pipeline = SourcingPipeline()
-
-    def _handle_message(body: bytes) -> None:
-        loop.run_until_complete(pipeline.run(body))
-
-    broker: BrokerInterface = create_broker()
-
-    def _shutdown(_signum: int, _frame: Any) -> None:
-        logger.info("Shutdown signal received; stopping consumer...")
-        broker.request_stop()
-
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
-
-    broker.connect()
     try:
-        broker.subscribe(QUEUE_SOURCING_REQUESTED, _handle_message)
-    finally:
-        if mongo_client is not None:
-            mongo_client.close()
-            logger.info("stage=mongo_client_closed")
-        loop.close()
-        broker.close()
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 if __name__ == "__main__":

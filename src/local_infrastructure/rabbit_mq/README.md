@@ -1,54 +1,30 @@
-# Local RabbitMQ Infrastructure
+# RabbitMQ server configuration (Docker)
 
-It creates durable queues and dead-letter queues (DLQs) aligned to the event names in `README.md`.
+This directory holds **RabbitMQ server** configuration for local development: `definitions.json` (exchanges, queues, DLX/DLQ bindings), `rabbitmq.conf`, and env templates. It is **not** application Python code.
+
+## How to run the broker
+
+Use the **repository root** [docker-compose.yml](../../../docker-compose.yml) — the only compose file for the dev stack. It mounts `definitions.json` and `rabbitmq.conf` into the `rabbitmq` service and starts MongoDB plus application services on a shared network.
+
+```bash
+# From the repository root
+docker compose up -d
+```
+
+Do **not** rely on a separate compose file in this folder (it was removed in favor of the single root stack).
 
 ## What gets provisioned
 
 - RabbitMQ with management UI (`rabbitmq:3.13-management`)
 - Topic exchange: `email_outreach.events`
 - Dead-letter exchange: `email_outreach.dlx`
-- Durable queue + DLQ for each pipeline event:
-  - `plan.requested`
-  - `plan.ready`
-  - `sourcing.requested`
-  - `sourcing.completed`
-  - `sourcing.partial`
-  - `prospecting.completed`
-  - `messaging.requested`
-  - `draft.written`
-  - `draft.failed`
-  - `campaign.completed`
+- Durable queue + DLQ for each pipeline event (see `definitions.json`), including `plan.requested`, `plan.ready`, `sourcing.requested`, and the rest.
 
-## Prerequisites
+## Verify
 
-- Docker Desktop
-- Docker Compose (v2+)
+- AMQP: `amqp://localhost:5672` (from host)
+- Management UI: [http://localhost:15672](http://localhost:15672) — default login from `.env` (often `guest` / `guest`).
 
-## Run
+## Service integration
 
-1. Create local env file:
-
-   - PowerShell:
-     - `Copy-Item .env.example .env`
-
-2. Start RabbitMQ:
-
-   - `docker compose up -d`
-
-3. Verify:
-
-   - AMQP endpoint: `amqp://localhost:5672`
-   - Management UI: [http://localhost:15672](http://localhost:15672)
-   - Default login: `guest` / `guest` (or values from `.env`)
-
-## Stop and cleanup
-
-- Stop stack: `docker compose down`
-- Stop and remove volume data: `docker compose down -v`
-
-## Notes for service integration
-
-- Local env settings for services should use:
-  - `BROKER_TYPE=rabbitmq`
-  - `RABBITMQ_URL=amqp://<user>:<password>@localhost:5672/<vhost>`
-- Production uses RabbitMQ in-cluster or Amazon MQ for RabbitMQ; this folder is local-only infrastructure.
+Applications connect with **`RABBITMQ_URL`** (and optional prefetch / log level). There is **no** in-repo Python “broker factory”; the broker process is this container. Services are normal AMQP clients.
