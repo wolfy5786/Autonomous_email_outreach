@@ -1,5 +1,10 @@
+/**
+ * MessageBroker — shared interface for all services.
+ * Implementations: EventsBroker (orchestrator), PythonBroker (sourcing/planning)
+ */
 export interface MessageBroker {
-  publish(topic: string, message: unknown): Promise<void>;
-  subscribe(topic: string, handler: (message: unknown) => Promise<void>): Promise<void>;
+  init(): Promise<void>;
+  publish(routingKey: string, payload: unknown): Promise<void>;
+  subscribe(routingKey: string, queue: string, handler: (msg: any) => Promise<void>): Promise<void>;
   disconnect(): Promise<void>;
 }
