@@ -9,6 +9,7 @@ from shared.models.company import CompanyRecord
 from shared.models.email_draft import EmailDraft
 from shared.models.hint import Hint
 from shared.models.plan import PlanRecord
+from shared.models.trace_event import TraceEvent
 
 MONGO_URI_ENV = "MONGO_URI"
 MONGO_DB_ENV = "MONGO_DB_NAME"
@@ -33,6 +34,6 @@ async def init_db(
     database = client[db_name]
     await init_beanie(
         database=database,
-        document_models=[CompanyRecord, Hint, PlanRecord, EmailDraft],
+        document_models=[CompanyRecord, Hint, PlanRecord, EmailDraft, TraceEvent],
     )
     return client, database

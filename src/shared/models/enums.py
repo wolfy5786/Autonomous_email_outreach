@@ -59,3 +59,12 @@ class EmailProvider(StrEnum):
     GMAIL = "gmail"
     MICROSOFT = "microsoft"
     STUB = "stub"  # local/test only
+
+
+class TracePhase(StrEnum):
+    """Lifecycle phase of an observability trace event."""
+
+    START = "start"        # operation began (e.g. consumer received a message)
+    END = "end"            # operation completed successfully
+    ERROR = "error"        # operation failed; error_type/error_message populated
+    EMIT = "emit"          # one-shot event with no duration (e.g. message published)
