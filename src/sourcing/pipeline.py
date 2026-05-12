@@ -231,20 +231,10 @@ class SourcingPipeline:
             )
             return
 
-        prospecting_payload = {
-            "campaign_id": job.campaign_id,
-            "plan_id": job.plan_id,
-            "entity_ids": entity_ids,
-        }
-        try:
-            await self._publisher.publish_prospecting_requested(prospecting_payload)
-        except Exception as e:
-            logger.warning(
-                "stage=publish_prospecting_requested_failed campaign_id=%s error=%s",
-                job.campaign_id,
-                e,
-                exc_info=True,
-            )
+        # Orchestrator owns the prospecting.requested fan-out — it subscribes to
+        # sourcing.completed and publishes prospecting.requested. Publishing it
+        # here too caused prospecting to consume each campaign twice. See
+        # design_docs/orchestrator_service_role.md.
 
     async def _discovery_cache(
         self,

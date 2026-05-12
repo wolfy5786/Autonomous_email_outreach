@@ -14,7 +14,6 @@ from .schemas import (
     PlanReadyEvent,
     PlanRecord,
     PlanRequestedEvent,
-    SourcingRequestedEvent,
 )
 
 log = structlog.get_logger(__name__)
@@ -30,18 +29,18 @@ class EventPublisher(Protocol):
     async def publish(self, routing_key: str, message: dict[str, Any]) -> None: ...
 
 
-async def _publish_plan_ready_and_sourcing(
+async def _publish_plan_ready(
     publisher: EventPublisher,
     campaign_id: str,
     plan_id: str,
 ) -> None:
+    """Publish only plan.ready. The orchestrator (subscribed to plan.ready)
+    owns publishing sourcing.requested — see orchestrator_service_role.md.
+    Publishing both here caused sourcing to consume each campaign twice.
+    """
     await publisher.publish(
         settings.plan_ready_queue,
         PlanReadyEvent(campaign_id=campaign_id, plan_id=plan_id).model_dump(),
-    )
-    await publisher.publish(
-        settings.sourcing_requested_queue,
-        SourcingRequestedEvent(campaign_id=campaign_id, plan_id=plan_id).model_dump(),
     )
 
 
@@ -55,10 +54,10 @@ async def handle_plan_requested(
 
     Flow:
       1. Parse event.
-      2. If a plan already exists for the campaign, republish plan.ready + sourcing.requested and exit.
+      2. If a plan already exists for the campaign, republish plan.ready and exit.
       3. Load the campaign; if missing, raise NonRetryableError (goes to DLQ).
       4. Call the LLM, persist the plan, attach plan_id to campaign.
-      5. Publish plan.ready and sourcing.requested (same routing keys as definitions.json).
+      5. Publish plan.ready (orchestrator owns sourcing.requested fan-out).
     """
     event = PlanRequestedEvent.model_validate(message)
     logger = log.bind(campaign_id=event.campaign_id)
@@ -66,8 +65,8 @@ async def handle_plan_requested(
 
     existing = await repo.find_existing_plan_id(event.campaign_id)
     if existing is not None:
-        logger.info("plan already exists, republishing plan.ready + sourcing.requested", plan_id=existing)
-        await _publish_plan_ready_and_sourcing(publisher, event.campaign_id, existing)
+        logger.info("plan already exists, republishing plan.ready", plan_id=existing)
+        await _publish_plan_ready(publisher, event.campaign_id, existing)
         return
 
     campaign = await repo.get_campaign(event.campaign_id)
@@ -100,8 +99,8 @@ async def handle_plan_requested(
     UUID(plan_id_str)
 
     await repo.attach_plan_to_campaign(event.campaign_id, plan_id_str)
-    await _publish_plan_ready_and_sourcing(publisher, event.campaign_id, plan_id_str)
-    logger.info("plan.ready and sourcing.requested published", plan_id=plan_id_str)
+    await _publish_plan_ready(publisher, event.campaign_id, plan_id_str)
+    logger.info("plan.ready published", plan_id=plan_id_str)
 
 
 def _suppress_unused_logger_warning() -> None:  # pragma: no cover
