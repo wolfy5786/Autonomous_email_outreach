@@ -98,6 +98,30 @@ def test_get_campaign_stats() -> Tuple[bool, str]:
         return False, f"Failed to get campaign stats: {str(e)}"
 
 
+def test_metrics_endpoint() -> Tuple[bool, str]:
+    """Test Prometheus metrics exposure."""
+    try:
+        response = requests.get(f"{BASE_URL}/metrics", timeout=5)
+        if response.status_code != 200:
+            return False, f"Unexpected status code: {response.status_code}"
+
+        body = response.text
+        required_metrics = [
+            "prospecting_messages_received_total",
+            "prospecting_completed_published_total",
+            "prospecting_duplicate_messages_skipped_total",
+            "prospecting_permanent_failures_total",
+            "prospecting_retryable_failures_total",
+        ]
+        missing = [metric for metric in required_metrics if metric not in body]
+        if missing:
+            return False, f"Missing metrics: {', '.join(missing)}"
+
+        return True, "Metrics endpoint exposes the expected Prospecting counters"
+    except Exception as e:
+        return False, f"Metrics endpoint failed: {str(e)}"
+
+
 def main():
     """Run API tests."""
     print("\n" + "="*50)
@@ -106,6 +130,7 @@ def main():
     
     tests = [
         ("Health Check", test_health),
+        ("Metrics Endpoint", test_metrics_endpoint),
         ("Score Prospect", test_score_prospect),
         ("List Prospects", test_list_prospects),
         ("Get Campaign Stats", test_get_campaign_stats),

@@ -59,6 +59,23 @@ def test_prospecting_requested_contract() -> Tuple[bool, str]:
         return _fail(f"Prospecting requested contract failed: {exc}")
 
 
+def test_prospecting_requested_requires_plan_id() -> Tuple[bool, str]:
+    try:
+        ProspectingRequestedEvent.model_validate(
+            {
+                "campaign_id": "campaign-1",
+                "entity_ids": ["company-1"],
+            }
+        )
+        return _fail("prospecting requested accepted a payload without plan_id")
+    except ValidationError as exc:
+        if "plan_id" not in str(exc):
+            return _fail(f"unexpected validation error for missing plan_id: {exc}")
+        return _ok("Prospecting requested contract requires plan_id")
+    except Exception as exc:
+        return _fail(f"missing plan_id contract check failed: {exc}")
+
+
 def test_mongo_documents_contract() -> Tuple[bool, str]:
     try:
         company = CompanyDocument.model_validate(
@@ -147,6 +164,7 @@ def main() -> int:
 
     tests = [
         ("Prospecting Requested Contract", test_prospecting_requested_contract),
+        ("Prospecting Requested Requires Plan ID", test_prospecting_requested_requires_plan_id),
         ("Mongo Document Contract", test_mongo_documents_contract),
         ("Output Contract", test_output_contract),
     ]

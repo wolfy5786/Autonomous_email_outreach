@@ -36,7 +36,7 @@ class ProspectingWorker:
 
     def handle_prospecting_requested(self, msg: dict[str, Any]) -> dict[str, Any]:
         """
-        Input: { campaign_id, plan_id?, entity_ids[] }
+        Input: { campaign_id, plan_id, entity_ids[] }
         Output: { campaign_id, ranked_prospects[] }
         """
         event = ProspectingRequestedEvent.model_validate(msg)

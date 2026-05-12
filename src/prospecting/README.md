@@ -79,6 +79,12 @@ docker compose ps
 curl http://localhost:8004/health
 ```
 
+Check metrics exposure:
+
+```bash
+curl http://localhost:8004/metrics | grep prospecting_
+```
+
 Run the functional test suite in Docker:
 
 ```bash
@@ -104,6 +110,16 @@ Optional startup controls:
 - `MONGODB_URI`: MongoDB connection string (required)
 - `MONGODB_DB`: Mongo database name (default: `email_outreach`)
 - `DEFAULT_MIN_ICP_SCORE`: fallback threshold if `campaigns.config.min_icp_score` is missing (default: `0.0`)
+
+## Metrics
+
+The service exposes Prometheus counters at `/metrics` for:
+
+- `prospecting_messages_received_total`
+- `prospecting_completed_published_total`
+- `prospecting_duplicate_messages_skipped_total`
+- `prospecting_permanent_failures_total`
+- `prospecting_retryable_failures_total`
 
 ## Expected MongoDB collections (per `README.md`)
 

@@ -6,9 +6,10 @@ import threading
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from pika.exceptions import AMQPError
 from pymongo.errors import PyMongoError
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 
 from .broker import BrokerConfig, RabbitBroker
 from .config import Settings
@@ -22,6 +23,28 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger("prospecting")
+
+
+MESSAGES_RECEIVED = Counter(
+    "prospecting_messages_received",
+    "Total prospecting.requested messages received by the service",
+)
+COMPLETED_PUBLISHED = Counter(
+    "prospecting_completed_published",
+    "Total prospecting.completed messages published by the service",
+)
+DUPLICATE_SKIPPED = Counter(
+    "prospecting_duplicate_messages_skipped",
+    "Total duplicate prospecting messages skipped via idempotency",
+)
+PERMANENT_FAILURES = Counter(
+    "prospecting_permanent_failures",
+    "Total non-retryable prospecting processing failures",
+)
+RETRYABLE_FAILURES = Counter(
+    "prospecting_retryable_failures",
+    "Total retryable prospecting processing failures",
+)
 
 
 def _structured_log(level: int, **fields: object) -> None:
@@ -52,6 +75,7 @@ class AppState:
 
     def handle_prospecting_requested_message(self, msg: dict, props: object | None = None, method: object | None = None) -> None:
         # idempotency: skip already-processed events when event_id or idempotency_key is present
+        MESSAGES_RECEIVED.inc()
         event_id = None
         try:
             event_id = msg.get("event_id") or msg.get("idempotency_key")
@@ -75,6 +99,7 @@ class AppState:
                 retry_count = 0
 
         if event_id and self.mongo.is_event_processed(event_id, campaign_id):
+            DUPLICATE_SKIPPED.inc()
             _structured_log(
                 logging.INFO,
                 service="prospecting",
@@ -91,6 +116,7 @@ class AppState:
         try:
             out = self.worker.handle_prospecting_requested(msg)
         except PermanentProcessingError as exc:
+            PERMANENT_FAILURES.inc()
             _structured_log(
                 logging.ERROR,
                 service="prospecting",
@@ -104,6 +130,7 @@ class AppState:
             )
             raise
         except PyMongoError as exc:
+            RETRYABLE_FAILURES.inc()
             _structured_log(
                 logging.ERROR,
                 service="prospecting",
@@ -120,7 +147,9 @@ class AppState:
         # publish only after DB writes inside the worker have completed
         try:
             self.broker.publish("prospecting.completed", out)
+            COMPLETED_PUBLISHED.inc()
         except AMQPError as exc:
+            RETRYABLE_FAILURES.inc()
             _structured_log(
                 logging.ERROR,
                 service="prospecting",
@@ -180,6 +209,11 @@ def health():
         "broker_connected": state.broker.is_connected,
         "mongodb_db": state.settings.mongodb_db,
     }
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 def main() -> None:
