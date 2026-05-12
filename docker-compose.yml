@@ -134,6 +134,23 @@ services:
       - "8090:8090"
     restart: unless-stopped
 
+  # Operator + marketing web app. SPA served by nginx; nginx also proxies
+  # /api/* to the gateway service (override target via GATEWAY_URL env).
+  web:
+    build:
+      context: ./src
+      dockerfile: web-ui/Dockerfile
+      args:
+        # Empty → the SPA hits /api/* on the same origin (nginx proxies to GATEWAY_URL).
+        # Set to e.g. http://gateway:8000 to bypass the proxy at build time.
+        VITE_API_BASE_URL: ""
+    container_name: email-outreach-web
+    environment:
+      GATEWAY_URL: "http://gateway:8000"
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+
 volumes:
   rabbitmq_data:
   mongo_data:
