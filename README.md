@@ -1,10 +1,10 @@
-# Autonomous Email Outreach System
+# Email Outreach — Autonomous Email Campaign System
 
 > A distributed, AI-powered outbound sales engine that mines public data, scores prospects, generates personalized email drafts, and writes them directly to the user's email account — all orchestrated through asynchronous message queues and managed through a Web UI.
 
 ---
 
-## Table of Contents
+## Architecture Overview
 
 1. [System Overview](#system-overview)
 2. [Architecture](#architecture)
@@ -27,7 +27,14 @@
 11. [Semantic Search on Unknown Columns](#semantic-search-on-unknown-columns)
 12. [System Flow — End to End](#system-flow--end-to-end)
 
----
+| Service | Purpose |
+|---|---|
+| **Orchestrator** | Entry point, pipeline coordinator, REST API (includes absorbed Review endpoints) |
+| **Planning** | ICP analysis → Plan Document generation (LLM) |
+| **Sourcing** | Data mining — Layer 1 APIs + Layer 2 headless browsers |
+| **Prospecting** | ICP scoring + semantic search on enriched prospect data |
+| **Messaging** | Personalized email draft generation (LLM) + delivery to user email account |
+| **Web UI** | Static SPA — campaign management, prospects, draft review, pipeline monitoring |
 
 ## System Overview
 
@@ -107,9 +114,9 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 
 ---
 
-## Services
+## Repository Structure
 
-### Orchestrator Service
+See [`Repository_structure.md`](./Repository_structure.md) for the full directory tree.
 
 **Role:** Entry point and pipeline coordinator. Receives a campaign trigger (ICP definition + product profile), fans out work to downstream services through queues, and monitors pipeline state.
 
@@ -126,7 +133,7 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 
 ---
 
-### Planning Service
+## Quick Start (Local Development)
 
 **Role:** Analyzes the ICP and product profile to produce a structured **Plan Document** used by every downstream worker.
 
@@ -147,9 +154,13 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 
 **Key output:** A reusable Plan Document that anchors all downstream services to the same ICP interpretation.
 
----
+# Run the orchestrator
+cd src/orchestrator
+npm install
+npm run dev
+```
 
-### Sourcing Service
+### Environment Variables
 
 **Role:** Runs **validated company discovery**, **deep enrichment**, and **POC identity resolution** exactly as enumerated in [`data_sourcing_map.md`](data_sourcing_map.md): Tier A directories, Tier B hint feeds, enrichment via owned web crawl + filings + anchored SERP, etc. Implements the cache-first workflows below.
 
@@ -470,7 +481,15 @@ All inter-service communication is asynchronous via named message queues. Servic
 
 All endpoints are HTTP/REST. No authentication is required. The Orchestrator Service owns the public API surface. The Web UI consumes these endpoints at `/api/*`.
 
-### Campaign Management
+### Campaigns
+- `POST /campaigns` — Create and trigger a campaign
+- `GET /campaigns` — List all campaigns
+- `GET /campaigns/:id` — Campaign details + pipeline state
+- `PATCH /campaigns/:id` — Pause/resume, update send window
+- `DELETE /campaigns/:id` — Cancel campaign
+- `GET /campaigns/:id/stats` — Sent count, approval rate, bounce rate
+- `GET /campaigns/:id/prospects` — Ranked prospects
+- `GET /campaigns/:id/drafts` — Drafts (filterable by `?status=`)
 
 | Method | Path | Description |
 |---|---|---|
@@ -500,7 +519,7 @@ All endpoints are HTTP/REST. No authentication is required. The Orchestrator Ser
 
 ---
 
-### Prospect Management
+## Broker Switching
 
 | Method | Path | Description |
 |---|---|---|
@@ -508,7 +527,8 @@ All endpoints are HTTP/REST. No authentication is required. The Orchestrator Ser
 | `GET` | `/api/prospects/:id` | Get full prospect record (company + POC + score) |
 | `PATCH` | `/api/prospects/:id/skip` | Mark a prospect as skipped (exclude from messaging) |
 
----
+- **Local dev**: `BROKER_TYPE=rabbitmq` + `RABBITMQ_URL=amqp://localhost`
+- **Production**: `BROKER_TYPE=sqs` + `AWS_REGION=us-east-1`
 
 ### Draft Management
 

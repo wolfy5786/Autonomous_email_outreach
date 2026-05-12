@@ -1,0 +1,3 @@
+# Linkerd service mesh — mTLS, golden metrics, retries
+# See cloud_INFRASTRUCTURE.md § Service Discovery & Service Mesh
+identityTrustAnchorsPEM: "" # Generated via linkerd install

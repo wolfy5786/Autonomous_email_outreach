@@ -71,9 +71,9 @@ The Review Service and Send Service are removed. Review-related API endpoints ar
 **Messaging** (`src/local_infrastructure/`)  
 Local dev runs **RabbitMQ** in Docker (`rabbit_mq/`). Production uses **RabbitMQ** in-cluster on EKS or **Amazon MQ for RabbitMQ** — the same AMQP topology and queue names as documented in the root `README.md`.
 
-**Observability**  
-- *Cloud*: `cloud_terraform/modules/observability/` provisions CloudWatch log groups, SNS alarms, and metric filters. `deploy/platform/kube-prometheus-stack-values.yaml` + `fluent-bit-values.yaml` deploy Prometheus/Grafana and log shipping in-cluster.  
+**Observability**
+- *Cloud*: `cloud_terraform/modules/observability/` provisions CloudWatch log groups, SNS alarms, and metric filters. `deploy/platform/kube-prometheus-stack-values.yaml` + `fluent-bit-values.yaml` deploy Prometheus/Grafana and log shipping in-cluster.
 - *Local*: `src/local_infrastructure/observability/` holds Prometheus scrape configs, Grafana dashboards, and a RabbitMQ exporter for the local dev environment.
 
-**Helm charts** (`deploy/`)  
+**Helm charts** (`deploy/`)
 One chart per service with `deployment.yaml`, `service.yaml`, `serviceaccount.yaml`, `hpa.yaml`/`scaledobject.yaml`, `externalsecret.yaml`, and `servicemonitor.yaml`. The `umbrella/` chart deploys all services in a single `helm upgrade` for dev.

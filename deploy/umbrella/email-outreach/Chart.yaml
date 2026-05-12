@@ -1,0 +1,23 @@
+apiVersion: v2
+name: email-outreach
+description: Umbrella chart — deploys all services in a single release (dev)
+version: 0.1.0
+dependencies:
+  - name: orchestrator
+    version: "0.1.0"
+    repository: "file://../../charts/orchestrator"
+  - name: planning
+    version: "0.1.0"
+    repository: "file://../../charts/planning"
+  - name: sourcing
+    version: "0.1.0"
+    repository: "file://../../charts/sourcing"
+  - name: prospecting
+    version: "0.1.0"
+    repository: "file://../../charts/prospecting"
+  - name: messaging
+    version: "0.1.0"
+    repository: "file://../../charts/messaging"
+  - name: web-ui
+    version: "0.1.0"
+    repository: "file://../../charts/web-ui"
