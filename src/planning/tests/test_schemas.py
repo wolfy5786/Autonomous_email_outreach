@@ -88,8 +88,8 @@ def test_unknown_source_rejected() -> None:
         LLMPlanOutput.model_validate(bad)
 
 
-def test_oc_status_must_be_one_of_three_values() -> None:
-    bad = {"sources": [{"source": "open_corporates", "filters": {"status": "pending"}}]}
+def test_product_hunt_min_votes_must_be_non_negative() -> None:
+    bad = {"sources": [{"source": "product_hunt", "filters": {"min_votes": -1}}]}
     with pytest.raises(ValidationError):
         LLMPlanOutput.model_validate(bad)
 
@@ -146,24 +146,23 @@ def test_hacker_news_routes_to_correct_model() -> None:
     assert src.filters.min_points == 50
 
 
-def test_oc_filters_route_to_open_corporates() -> None:
+def test_product_hunt_filters_route_to_product_hunt() -> None:
     plan = LLMPlanOutput.model_validate(
         {
             "sources": [
                 {
-                    "source": "open_corporates",
+                    "source": "product_hunt",
                     "filters": {
-                        "jurisdiction_code": "us",
-                        "status": "active",
-                        "industry_keywords": ["software"],
+                        "topics": ["Developer Tools"],
+                        "min_votes": 10,
                     },
                 }
             ]
         }
     )
     src = plan.sources[0]
-    assert src.source == "open_corporates"
-    assert src.filters.jurisdiction_code == "us"
+    assert src.source == "product_hunt"
+    assert src.filters.topics == ["Developer Tools"]
 
 
 # --- Global filters ---

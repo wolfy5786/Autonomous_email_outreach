@@ -268,11 +268,11 @@ per data sourcing map tiers       vs freshness_budget
 `data_sourcing_map.md` is authoritative; Sourcing mechanically mirrors its stages:
 
 **Phase 1 — discovery (validated company enumeration)**  
-Tier A directories (examples): Y Combinator roster, Product Hunt launches, Open Corporates registry API (entity resolution and validation). Tier B *hints only* feed raw leads (HN Show HN/job threads, public LinkedIn company surfaces) → must pass deterministic validation gates before enrichment spend.
+Tier A directories (examples): Y Combinator roster, Product Hunt launches. Tier B *hints only* feed raw leads (HN Show HN/job threads, public LinkedIn company surfaces) → must pass deterministic validation gates before enrichment spend.
 
 **Phase 2 — enrichment (known domains only)**  
 - crawl4ai (or equivalents) → markdown → LLM JSON for corporate sites/blogs/`/careers` + ATS embeds  
-- Regulatory / reference signals (`SEC EDGAR Form D`, OpenCorporates)  
+- Regulatory / reference signals (`SEC EDGAR Form D`)  
 - Anchored SERP/news pulls **after** canonical `(name,domain)`
 
 **Supporting automation:** Browser automation stacks (browser-use, Firecrawl, etc.) may accelerate targeted fetch workloads but stay within the crawl policy defined in [`docs/data-sourcing-service.md`](docs/data-sourcing-service.md).
@@ -288,7 +288,6 @@ The table summarizes the same catalogue as **`data_sourcing_map.md`** (see that 
 | Source | Phase | Typical use | Domain focus |
 |---|---|---|---|
 | Y Combinator companies | Discovery / validation | Canonical startup domains + narratives | SW + HC |
-| Open Corporates | Discovery + validation / enrichment | Legal entity metadata, officers, jurisdiction, active status | SW + HC |
 | Product Hunt | Discovery | Recent launches & maker metadata | SW |
 | Hacker News (Algolia) | Hint feed | Announcements/job threads needing validation | SW |
 | LinkedIn (public listings) | Hint + enrichment | Employee bands, HQ clarity | SW + HC |

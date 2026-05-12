@@ -11,18 +11,22 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 
 SAMPLE_ICP = {
-    "industry": "B2B SaaS",
+    "industry": "Enterprise software & internal platforms",
     "employee_range": [50, 500],
-    "stack_includes": ["Kubernetes", "AWS"],
-    "geography": ["US", "EU"],
-    "pain": "slow incident response and poor deploy observability",
+    "stack_includes": ["Java", "JDBC", "Spring", "Spring Boot", "Maven/Gradle"],
+    "geography": ["United States"],
+    "pain": "Need a software engineer strong in Java with JDBC, Spring, and common Java frameworks, with about three years of shipping experience.",
 }
 
 SAMPLE_PRODUCT = {
-    "name": "Acme Observability",
-    "value_prop": "Correlate deploys with runtime anomalies in under two minutes.",
-    "pricing": "usage-based",
-    "differentiators": ["deploy-aware", "OSS-friendly", "no agent required"],
+    "name": "Mid-level Java backend engineer (~3 YOE)",
+    "value_prop": "Java developer with roughly three years building and maintaining services using JDBC for data access, Spring/Spring Boot, and familiar supporting frameworks in typical enterprise stacks.",
+    "pricing": "full-time or contract-to-hire",
+    "differentiators": [
+        "JDBC and relational persistence",
+        "Spring ecosystem (Boot, MVC, Data)",
+        "broad Java framework literacy beyond a single stack",
+    ],
 }
 
 

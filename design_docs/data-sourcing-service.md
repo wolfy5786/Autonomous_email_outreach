@@ -93,7 +93,7 @@ Optional extension for observability (if all consumers tolerate extra keys):
 3. **Build attribute source map** — Deterministic map from requested attributes → sources, templates, schemas, fallbacks ([§5](#5-attribute-source-map)); align sources with [`data_sourcing_map.md`](../data_sourcing_map.md).
 4. **Company discovery** — Tier A directories (YC, Crunchbase, Product Hunt) plus Tier B hints (HN, public LinkedIn company pages) validated before enrichment ([`data_sourcing_map.md`](../data_sourcing_map.md)).
 5. **Candidate validation** — Relevance, deduplication, domain sanity, blocklists ([§8](#8-validation-gates-and-failure-modes)).
-6. **Company enrichment** — Website/blog + careers pipelines (crawl4ai + LLM), targeted filings (e.g. SEC Form D), OpenCorporates, SERP anchored to `(name, domain)` only ([§6](#6-source-catalog-and-usage-rules)).
+6. **Company enrichment** — Website/blog + careers pipelines (crawl4ai + LLM), targeted filings (e.g. SEC Form D), SERP anchored to `(name, domain)` only ([§6](#6-source-catalog-and-usage-rules)).
 7. **POC identity mining** — Public sources only — fill names/titles/URLs per `poc_signals` without commercial email enrichment.
 8. **Enrichment validation** — Schema, evidence, completeness.
 9. **Store and emit** — Persist MongoDB documents + hints, publish `sourcing.completed` or `sourcing.partial`.

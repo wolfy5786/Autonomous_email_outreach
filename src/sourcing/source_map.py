@@ -325,28 +325,6 @@ def _catalog() -> list[AttributeSourceMapRule]:
             priority=2,
             verticals=["SW", "HC"],
         ),
-        # --- OpenCorporates (validation / fallback) ---
-        AttributeSourceMapRule(
-            attribute="company_active_status",
-            source_type=SourceType.API,
-            source_name="opencorporates",
-            allowed_for_discovery=False,
-            allowed_for_enrichment=True,
-            confidence_weight=0.88,
-            priority=4,
-            fallback_sources=[],
-            verticals=["SW", "HC"],
-        ),
-        AttributeSourceMapRule(
-            attribute="incorporation_date",
-            source_type=SourceType.API,
-            source_name="opencorporates",
-            allowed_for_discovery=False,
-            allowed_for_enrichment=True,
-            confidence_weight=0.82,
-            priority=4,
-            verticals=["SW", "HC"],
-        ),
     ]
 
 

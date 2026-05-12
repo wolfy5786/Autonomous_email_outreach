@@ -55,17 +55,6 @@ class ProductHuntFilters(BaseModel):
     min_votes: int | None = Field(default=None, ge=0)
 
 
-class OpenCorporatesFilters(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    jurisdiction_code: str | None = None
-    company_type: str | None = None
-    status: Literal["active", "dissolved", "inactive"] | None = None
-    incorporation_date_from: date | None = None
-    incorporation_date_to: date | None = None
-    registered_address_country: str | None = None
-    industry_keywords: list[str] | None = None
-
-
 class YCNewsFilters(BaseModel):
     model_config = ConfigDict(extra="forbid")
     batch_years: list[str] | None = None
@@ -107,13 +96,6 @@ class ProductHuntSource(BaseModel):
     filters: ProductHuntFilters = Field(default_factory=ProductHuntFilters)
 
 
-class OpenCorporatesSource(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    source: Literal["open_corporates"]
-    enabled: bool = True
-    filters: OpenCorporatesFilters = Field(default_factory=OpenCorporatesFilters)
-
-
 class YCNewsSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["yc_news"]
@@ -137,7 +119,6 @@ class HackerNewsSource(BaseModel):
 
 SourceConfig = Annotated[
     ProductHuntSource
-    | OpenCorporatesSource
     | YCNewsSource
     | YCDirectorySource
     | HackerNewsSource,

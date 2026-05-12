@@ -16,12 +16,10 @@ The pipeline has two distinct phases that run sequentially. Discovery produces a
 | Source | URL | Access | Cost | Key Fields | Domains | Priority |
 |---|---|---|---|---|---|---|
 | Y Combinator | ycombinator.com/companies | HTML scrape or CSV mirror | Free | Name, domain, batch, description, B2B tag | SW + HC | Primary |
-| Open Corporates | opencorporates.com | Free REST API | Free (check current plan; ~500 API calls/day on free tier) | Legal name, incorporation date, officers, registered address, jurisdiction, active status | SW + HC | Primary |
 | Product Hunt | producthunt.com | Free API + HTML fallback | Free API key | Launch date, upvotes, tags, maker info, website | SW | Primary |
 
 **Usage notes:**
 - **YC:** Filter by `domain=Healthcare` or `B2B SaaS`. Batch year = implicit funding recency proxy. ~4,000 companies total. Refresh quarterly.
-- **Open Corporates:** Use to resolve and validate legal entities (and as a hook for domain discovery where filings link out). Not a funding-round directory; pair with SEC EDGAR and SERP for raise signals. Respect API rate limits.
 - **Product Hunt:** Use upvote count as traction proxy. Makers field can seed contact discovery later. Best for recent software launches (last 24 months).
 
 ---
@@ -62,12 +60,10 @@ The pipeline has two distinct phases that run sequentially. Discovery produces a
 |---|---|---|---|---|---|
 | SERP (targeted per-company) | — | SerpAPI free (100/mo) or direct scrape | SerpAPI free tier / fragile if direct | Recent news, press releases, funding announcements, product launches | Primary |
 | SEC EDGAR Form D | efts.sec.gov | Free structured API | Free | Offering type, amount raised, date filed, SIC code, state | Primary |
-| OpenCorporates | opencorporates.com | Free API (500 req/day) | Free | Incorporation date, officers, registered address, active status | Fallback |
 
 **Usage notes:**
 - **SERP:** Query patterns — `"[company] funding 2024"`, `"[company] launch site:techcrunch.com"`. Use only after company is identified. Never for bulk list harvesting.
 - **SEC EDGAR:** Filter by SIC codes `7372` (prepackaged software) and `8099` (health services). Form D = company just raised — surfaces private raises ahead of typical press timelines. 15-day filing lag after raise closes.
-- **OpenCorporates:** Use for validation — confirm company is active and real. Officers list can seed contact discovery later. Covers 140+ jurisdictions.
 
 ---
 
@@ -83,7 +79,7 @@ YC directory  →  ProductHunt  →  HN Show HN
 
 ### Funding signal enrichment
 ```
-Open Corporates  →  SEC EDGAR Form D  →  SERP (funding query)
+SEC EDGAR Form D  →  SERP (funding query)
 ```
 
 ### Hiring + product signal enrichment
@@ -106,7 +102,6 @@ Website crawl + LLM  →  Job posts (stack hints in JDs)
 
 **Rate limit defaults:**
 - LinkedIn: max 1 request / 10 seconds, rotate user agents
-- Open Corporates API: stay within the free-tier daily request quota (confirm on opencorporates.com)
 - SerpAPI free: 100 searches/month — batch wisely
 
 **Service boundary:** **Sourcing** discovers company domains, enriches company records, and identifies **who** qualifies as a POC using public titles, names, and profile URLs (e.g. leadership pages, makers). **Prospecting** handles **commercial email discovery and verification** (e.g. Apollo.io, Hunter.io), ICP scoring, ranking, and thresholding before messaging.
@@ -118,7 +113,6 @@ Website crawl + LLM  →  Job posts (stack hints in JDs)
 | Source | Phase | Domain | Access | Cost |
 |---|---|---|---|---|
 | Y Combinator | Discovery | SW + HC | HTML scrape | Free |
-| Open Corporates | Discovery + Enrichment | SW + HC | REST API | Free (limited) |
 | Product Hunt | Discovery | SW | API | Free |
 | Hacker News | Discovery (signals) | SW | Algolia API | Free |
 | LinkedIn | Discovery (signals) + Enrichment | SW + HC | HTML scrape | Free |

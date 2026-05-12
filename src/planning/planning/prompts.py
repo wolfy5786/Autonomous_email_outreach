@@ -21,15 +21,6 @@ product_hunt:
   posted_before   : date (YYYY-MM-DD)
   min_votes       : integer >= 0
 
-open_corporates:
-  jurisdiction_code           : str — e.g. "us", "gb", "us_de"
-  company_type                : str — e.g. "private", "llc", "ltd"
-  status                      : str — "active" | "dissolved" | "inactive"
-  incorporation_date_from     : date (YYYY-MM-DD)
-  incorporation_date_to       : date (YYYY-MM-DD)
-  registered_address_country  : str — country of registered address
-  industry_keywords           : list[str]
-
 yc_news:
   batch_years     : list[str] — YC batch identifiers (e.g. "W23", "S24")
   industries      : list[str] — Industry tags as listed on YC company profiles

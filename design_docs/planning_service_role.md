@@ -12,8 +12,8 @@ This guide is **additive** to the high-level Planning Service summary in [`READM
 4. [LLM inputs](#4-llm-inputs)
 5. [Per-source search blocks](#5-per-source-search-blocks)
    - [Product Hunt](#51-product-hunt)
-   - [OpenCorporates](#52-opencorporates)
-   - [YC / YC directory (`yc_news`)](#53-yc--yc-directory-yc_news)
+   - [YC / YC directory (`yc_news`)](#52-yc--yc-directory-yc_news)
+   - [Hacker News (`hacker_news`)](#53-hacker-news-hacker_news)
 6. [Global filters](#6-global-filters)
 7. [Outreach context](#7-outreach-context)
 8. [Validation rules](#8-validation-rules)
@@ -100,37 +100,7 @@ Each block enables Sourcing to parameterize discovery/enrichment APIs and scrape
 | `posted_before` | `date` | Only include products launched before this date |
 | `min_votes` | `integer` | Minimum upvote threshold |
 
-### 5.2 OpenCorporates
-
-```json
-{
-  "source": "open_corporates",
-  "enabled": true,
-  "filters": {
-    "jurisdiction_code": "us",
-    "company_type": "private",
-    "incorporation_date_from": "2020-01-01",
-    "incorporation_date_to": "2024-01-01",
-    "registered_address_country": "US",
-    "status": "active",
-    "industry_keywords": ["software", "technology", "saas"]
-  }
-}
-```
-
-**Supported filters the LLM may populate:**
-
-| Filter | Type | Description |
-|---|---|---|
-| `jurisdiction_code` | `string` | Country or state jurisdiction (e.g. `us`, `gb`, `us_de`) |
-| `company_type` | `string` | Legal entity type (e.g. `private`, `llc`, `ltd`) |
-| `status` | `string` | Company status: `active`, `dissolved`, `inactive` |
-| `incorporation_date_from` | `date` | Earliest incorporation date |
-| `incorporation_date_to` | `date` | Latest incorporation date |
-| `registered_address_country` | `string` | Country of registered address |
-| `industry_keywords` | `string[]` | Keyword hints to match against company descriptions |
-
-### 5.3 YC / YC directory (`yc_news`)
+### 5.2 YC / YC directory (`yc_news`)
 
 ```json
 {
@@ -153,6 +123,34 @@ Each block enables Sourcing to parameterize discovery/enrichment APIs and scrape
 | `industries` | `string[]` | Industry tags as listed on YC company profiles |
 | `company_stage` | `string[]` | Funding stage filter |
 | `regions` | `string[]` | Geographic region of the company |
+
+### 5.3 Hacker News (`hacker_news`)
+
+Maps to the HN discovery path in `src/sourcing/discovery/hacker_news.py` (Algolia-backed search).
+
+```json
+{
+  "source": "hacker_news",
+  "enabled": true,
+  "filters": {
+    "query": "devtools OR observability",
+    "tags": ["show_hn", "launch_hn"],
+    "min_points": 10,
+    "min_comments": 3,
+    "created_after": "2024-01-01"
+  }
+}
+```
+
+**Supported filters the LLM may populate:**
+
+| Filter | Type | Description |
+|---|---|---|
+| `query` | `string` | Free-text search across title, URL, and story text |
+| `tags` | `string[]` | Story type(s): `show_hn`, `launch_hn`, `story`, `ask_hn` only |
+| `min_points` | `integer` | Minimum score (points); must be ≥ 0 |
+| `min_comments` | `integer` | Minimum comment count; must be ≥ 0 |
+| `created_after` | `date` | Only include items created on or after this date |
 
 *Additional sources from [`data_sourcing_map.md`](data_sourcing_map.md) should get their own blocks here as integrations land; use the same `{ "source", "enabled", "filters" }` pattern.*
 
