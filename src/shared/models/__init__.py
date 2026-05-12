@@ -14,9 +14,11 @@ from shared.models.enums import (
     HintCategory,
     ScrapeMode,
     SourceType,
+    TracePhase,
 )
 from shared.models.hint import Hint
 from shared.models.plan import PlanRecord
+from shared.models.trace_event import TraceEvent
 
 __all__ = (
     "AttributeProvenance",
@@ -32,5 +34,7 @@ __all__ = (
     "PlanRecord",
     "ScrapeMode",
     "SourceType",
+    "TraceEvent",
+    "TracePhase",
     "init_db",
 )

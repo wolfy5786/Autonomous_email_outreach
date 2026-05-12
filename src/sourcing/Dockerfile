@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app:/app/sourcing
+    PYTHONPATH=/app:/app/sourcing \
+    SERVICE_NAME=sourcing
 
 WORKDIR /app
 

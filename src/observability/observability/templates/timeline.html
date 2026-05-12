@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign_id }} — Timeline{% endblock %}
+{% block content %}
+<h1>Campaign <code>{{ campaign_id }}</code></h1>
+{% if not events %}
+    <div class="empty">No trace events recorded for this campaign.</div>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Service</th>
+            <th>Event</th>
+            <th>Phase</th>
+            <th>Duration (ms)</th>
+            <th>Error</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in events %}
+        <tr>
+            <td><span class="muted">{{ e.timestamp.isoformat() }}</span></td>
+            <td>{{ e.service }}</td>
+            <td><code>{{ e.event_name }}</code></td>
+            <td><span class="phase-{{ e.phase.value }}">{{ e.phase.value }}</span></td>
+            <td>{{ e.duration_ms if e.duration_ms is not none else "" }}</td>
+            <td>
+                {% if e.error_type %}
+                    <code>{{ e.error_type }}</code>: {{ e.error_message }}
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<h2>Raw trace_id</h2>
+<p><code>{{ events[0].trace_id }}</code></p>
+{% endif %}
+{% endblock %}

@@ -8,6 +8,7 @@ from fastapi import FastAPI, Response
 
 from local_infrastructure.factory.broker_factory import create_broker
 from shared.models import init_db
+from shared.observability import MongoTraceSink, configure_logging, set_trace_sink
 
 from .config import settings
 from .credentials import (
@@ -17,7 +18,6 @@ from .credentials import (
 )
 from .handlers import handle_messaging_requested
 from .llm import generate_draft
-from .logging_setup import configure_logging
 from .providers import create_provider
 from .repository import MessagingRepository
 
@@ -40,7 +40,7 @@ def _build_credentials() -> CredentialsResolverProtocol:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    configure_logging(settings.log_level)
+    configure_logging(service="messaging", level=settings.log_level)
     log.info(
         "messaging service starting",
         broker=settings.broker_type,
@@ -50,12 +50,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     # Mongo + Beanie. init_beanie creates the (campaign_id, poc_id) unique
-    # index on email_drafts that the repo relies on for idempotency.
+    # index on email_drafts that the repo relies on for idempotency. The same
+    # init_db also registers the trace_events collection used by MongoTraceSink.
     mongo_client, db = await init_db(
         connection_string=settings.mongo_url,
         database_name=settings.mongo_db,
     )
     repo = MessagingRepository(db)
+    set_trace_sink(MongoTraceSink())
 
     credentials = _build_credentials()
     provider = create_provider()
@@ -80,6 +82,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         log.info("messaging service shutting down")
+        set_trace_sink(None)
         try:
             await broker.disconnect()
         finally:
@@ -98,8 +101,13 @@ async def health() -> dict[str, str]:
 async def ready(response: Response) -> dict[str, object]:
     repo: MessagingRepository = app.state.repo
     mongo_ok = await repo.ping()
-    response.status_code = 200 if mongo_ok else 503
-    return {"status": "ok" if mongo_ok else "degraded", "checks": {"mongo": mongo_ok}}
+    broker_ok = await app.state.broker.ping()
+    ok = mongo_ok and broker_ok
+    response.status_code = 200 if ok else 503
+    return {
+        "status": "ok" if ok else "degraded",
+        "checks": {"mongo": mongo_ok, "broker": broker_ok},
+    }
 
 
 def run() -> None:

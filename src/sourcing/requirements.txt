@@ -6,3 +6,5 @@ pydantic>=2.7,<3
 pika>=1.3.2,<2
 python-dotenv>=1.0,<2
 httpx>=0.27,<0.29
+# Structured logging + trace context propagation (shared.observability)
+structlog>=24.4,<25

@@ -22,14 +22,16 @@ RUN pip install --no-cache-dir \
       "fastapi>=0.115,<1" \
       "uvicorn[standard]>=0.30,<1" \
       "tenacity>=9.0,<10" \
-      "structlog>=24.4,<25"
+      "structlog>=24.4,<25" \
+      "beanie>=1.26,<2"
 
 # ── runtime ──────────────────────────────────────────────
 FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    SERVICE_NAME=planning
 
 RUN groupadd -r app && useradd -r -g app -d /app app
 WORKDIR /app
@@ -38,11 +40,14 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy service code and shared broker code. Layout on disk:
+# Copy service code, shared broker code, and shared models/observability.
+# Layout on disk:
 #   /app/planning/...                    <- the service
-#   /app/local_infrastructure/...        <- the shared broker package
+#   /app/local_infrastructure/...        <- broker factory + traced broker
+#   /app/shared/...                      <- shared models + observability
 COPY src/planning/planning /app/planning
 COPY src/local_infrastructure /app/local_infrastructure
+COPY src/shared /app/shared
 
 USER app
 EXPOSE 8080

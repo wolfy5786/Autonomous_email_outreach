@@ -32,3 +32,12 @@ class MessageBroker(ABC):
     @abstractmethod
     async def disconnect(self) -> None:
         """Stop consumers, close connections. Idempotent."""
+
+    async def ping(self) -> bool:
+        """Liveness check used by ``/ready`` endpoints.
+
+        Default returns ``True`` (the broker object exists). Adapters that maintain
+        a live connection (e.g. ``RabbitMQBroker``) should override this to verify
+        the underlying connection is open.
+        """
+        return True

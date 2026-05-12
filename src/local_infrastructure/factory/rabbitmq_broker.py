@@ -90,6 +90,10 @@ class RabbitMQBroker(MessageBroker):
                     log.exception("handler failed on %s, sending to DLQ", queue.name)
                     await message.reject(requeue=False)
 
+    async def ping(self) -> bool:
+        """True if the AMQP connection is open. Returns False if not yet connected."""
+        return self._conn is not None and not self._conn.is_closed
+
     async def disconnect(self) -> None:
         for task in self._consumer_tasks:
             task.cancel()

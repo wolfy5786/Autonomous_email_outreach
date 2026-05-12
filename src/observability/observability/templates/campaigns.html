@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Campaigns — Observability{% endblock %}
+{% block content %}
+<h1>Campaigns</h1>
+{% if not campaigns %}
+    <div class="empty">No campaigns observed yet. Trigger one via <code>publish_plan_requested.py</code> to see it here.</div>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>Campaign</th>
+            <th>First seen</th>
+            <th>Last seen</th>
+            <th>Events</th>
+            <th>Services</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in campaigns %}
+        <tr>
+            <td><a href="/campaigns/{{ c.campaign_id }}"><code>{{ c.campaign_id }}</code></a></td>
+            <td><span class="muted">{{ c.first_seen.isoformat() }}</span></td>
+            <td><span class="muted">{{ c.last_seen.isoformat() }}</span></td>
+            <td>{{ c.event_count }}</td>
+            <td>{{ c.services | join(", ") }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
