@@ -246,7 +246,7 @@ All values are **initial** requests/limits; revise after 1 week of Grafana data.
 | orchestrator | 100m / 500m | 256Mi / 512Mi | general | 2 / 4 | HPA CPU @70% | HTTP-bound; 2 replicas for ingress HA |
 | planning | 200m / 1000m | 512Mi / 1Gi | general | 1 / 5 | KEDA: `plan.requested` depth ≥ 1 + HPA CPU @70% | LLM latency bound, not CPU bound |
 | sourcing | 500m / 2000m | 1Gi / 4Gi | **scraping** | 1 / 10 | KEDA: `sourcing.requested` depth ≥ 5 + HPA CPU @70% | Headless browser RAM-hungry |
-| prospecting | 250m / 1000m | 512Mi / 1Gi | general | 1 / 5 | KEDA: `sourcing.completed` depth ≥ 1 + HPA CPU @70% | Mostly cosine sim + DB reads |
+| prospecting | 250m / 1000m | 512Mi / 1Gi | general | 1 / 5 | KEDA: `prospecting.requested` depth ≥ 1 + HPA CPU @70% | Mostly cosine sim + DB reads |
 | messaging | 200m / 800m | 512Mi / 1Gi | general | 1 / 5 | KEDA: `messaging.requested` depth ≥ 1 + HPA CPU @70% | LLM-bound + external Draft API calls |
 | web-ui | 50m / 200m | 64Mi / 128Mi | general | 2 / 2 | none (static nginx) | HA via 2 replicas |
 | ingress-nginx | 100m / 500m | 128Mi / 256Mi | general | 2 / 4 | HPA CPU @70% | |
@@ -303,7 +303,7 @@ Use KEDA’s `TriggerAuthentication` (or `ClusterTriggerAuthentication`) so the 
 ### Services on KEDA + CPU-fallback
 - `planning` → scaler on `plan.requested`
 - `sourcing` → scaler on `sourcing.requested`
-- `prospecting` → scaler on `sourcing.completed`
+- `prospecting` → scaler on `prospecting.requested`
 - `messaging` → scaler on `messaging.requested`
 
 ### Services on HPA-only
@@ -447,6 +447,7 @@ All application queues are **classic or quorum queues** (not FIFO in the SQS sen
 | `sourcing.requested` | `sourcing.requested.dlq` | **300s** (scraping can be slow) |
 | `sourcing.completed` | `sourcing.completed.dlq` | 30s |
 | `sourcing.partial` | `sourcing.partial.dlq` | 30s |
+| `prospecting.requested` | `prospecting.requested.dlq` | 30s |
 | `prospecting.completed` | `prospecting.completed.dlq` | 30s |
 | `messaging.requested` | `messaging.requested.dlq` | **120s** (LLM latency + Draft API call) |
 | `draft.written` | `draft.written.dlq` | 30s |

@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 import httpx
 
 from discovery.base import DiscoveryContext, DiscoveryResult, DiscoverySource
+from shared.models.plan import YCDirectoryFilters, YCDirectorySource
 
 logger = logging.getLogger("sourcing.discovery.yc_directory")
 
@@ -42,6 +43,16 @@ class YCDirectoryDiscovery(DiscoverySource):
     async def discover(self, ctx: DiscoveryContext) -> DiscoveryResult:
         result = DiscoveryResult(source_name=self.source_name, tier=self.tier)
 
+        block = _yc_directory_block_from_plan(ctx.plan)
+        if block is not None and not block.enabled:
+            logger.info(
+                "stage=yc_directory_skipped_disabled campaign_id=%s reason=plan_enabled_false",
+                ctx.campaign_id,
+            )
+            return result
+
+        filters = block.filters if block is not None else YCDirectoryFilters()
+
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_S) as client:
             (b2b_rows, b2b_err), (hc_rows, hc_err) = await asyncio.gather(
                 self._fetch(client, B2B_URL, "b2b"),
@@ -58,28 +69,35 @@ class YCDirectoryDiscovery(DiscoverySource):
         by_id: dict[Any, dict[str, Any]] = {}
         skipped_no_domain = 0
         skipped_inactive = 0
+        skipped_filter = 0
         for raw in b2b_rows + hc_rows:
             yc_id = raw.get("id")
             if yc_id is None or yc_id in by_id:
                 continue
-            candidate, reason = self._to_candidate(raw, is_b2b=(yc_id in b2b_ids))
+            candidate, reason = self._to_candidate(raw, is_b2b=(yc_id in b2b_ids), filters=filters)
             if candidate is None:
                 if reason == "inactive":
                     skipped_inactive += 1
                 elif reason == "no_domain":
                     skipped_no_domain += 1
                 continue
+            if not _candidate_matches_filters(candidate, raw, filters):
+                skipped_filter += 1
+                continue
             by_id[yc_id] = candidate
 
         result.candidates = list(by_id.values())
 
         logger.info(
-            "yc_directory: b2b=%s hc=%s emitted=%s skipped_inactive=%s skipped_no_domain=%s errors=%s",
+            "yc_directory: b2b=%s hc=%s emitted=%s skipped_inactive=%s skipped_no_domain=%s "
+            "skipped_filter=%s applied_filters=%s errors=%s",
             len(b2b_rows),
             len(hc_rows),
             len(result.candidates),
             skipped_inactive,
             skipped_no_domain,
+            skipped_filter,
+            filters.model_dump(exclude_none=True),
             len(result.errors),
         )
         return result
@@ -107,8 +125,9 @@ class YCDirectoryDiscovery(DiscoverySource):
         raw: dict[str, Any],
         *,
         is_b2b: bool,
+        filters: YCDirectoryFilters,
     ) -> tuple[dict[str, Any] | None, str | None]:
-        if (raw.get("status") or "").lower() != "active":
+        if filters.status is None and (raw.get("status") or "").lower() != "active":
             return None, "inactive"
 
         domain = _extract_domain(raw.get("website") or "")
@@ -147,6 +166,112 @@ class YCDirectoryDiscovery(DiscoverySource):
 
 
 _YEAR_IN_BATCH_RE = re.compile(r"(20\d{2}|\d{2})")
+
+
+def _yc_directory_block_from_plan(plan: Any) -> YCDirectorySource | None:
+    sources = getattr(plan, "sources", None)
+    if not isinstance(sources, list):
+        return None
+    for block in sources:
+        if isinstance(block, YCDirectorySource):
+            return block
+        if getattr(block, "source", None) == "yc_directory":
+            return YCDirectorySource.model_validate(block)
+        if isinstance(block, dict) and block.get("source") == "yc_directory":
+            return YCDirectorySource.model_validate(block)
+    return None
+
+
+def _norm(s: Any) -> str | None:
+    if not isinstance(s, str):
+        return None
+    out = s.strip().lower()
+    return out or None
+
+
+def _norm_set(values: list[str] | None) -> set[str]:
+    if not values:
+        return set()
+    out: set[str] = set()
+    for v in values:
+        n = _norm(v)
+        if n:
+            out.add(n)
+    return out
+
+
+def _coerce_year(v: Any) -> int | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str):
+        m = _YEAR_IN_BATCH_RE.search(v)
+        if not m:
+            return None
+        raw = m.group(1)
+        return int(raw) if len(raw) == 4 else 2000 + int(raw)
+    return None
+
+
+def _candidate_matches_filters(
+    candidate: dict[str, Any],
+    raw: dict[str, Any],
+    filters: YCDirectoryFilters,
+) -> bool:
+    if filters.status is not None:
+        cand_status = _norm(candidate.get("yc_status"))
+        if cand_status != filters.status.lower():
+            return False
+
+    if filters.batch_years:
+        want_years = {_coerce_year(y) for y in filters.batch_years}
+        want_years.discard(None)
+        if candidate.get("yc_batch_year") not in want_years:
+            return False
+
+    if filters.industries:
+        want = _norm_set(filters.industries)
+        cand_industry = _norm(raw.get("industry"))
+        if cand_industry is None or cand_industry not in want:
+            return False
+
+    if filters.subindustries:
+        want = _norm_set(filters.subindustries)
+        cand_sub = _norm(raw.get("subindustry"))
+        if cand_sub is None or cand_sub not in want:
+            return False
+
+    if filters.tags:
+        want = _norm_set(filters.tags)
+        cand_tags = {n for n in (_norm(t) for t in (candidate.get("tags") or [])) if n}
+        if not (cand_tags & want):
+            return False
+
+    if filters.regions:
+        want = _norm_set(filters.regions)
+        hq = candidate.get("headquarters") or {}
+        region_hits: set[str] = set()
+        for key in ("country", "city"):
+            n = _norm(hq.get(key) if isinstance(hq, dict) else None)
+            if n:
+                region_hits.add(n)
+        raw_regions = raw.get("regions")
+        if isinstance(raw_regions, list):
+            for r in raw_regions:
+                n = _norm(r)
+                if n:
+                    region_hits.add(n)
+        if not (region_hits & want):
+            return False
+
+    if filters.is_hiring is not None and "isHiring" in raw:
+        # Best-effort: only enforce when the field is present on the YC payload;
+        # entries missing the field are kept (treated as unknown).
+        if bool(raw.get("isHiring")) != filters.is_hiring:
+            return False
+
+    return True
 
 
 def _extract_domain(url: str) -> str | None:

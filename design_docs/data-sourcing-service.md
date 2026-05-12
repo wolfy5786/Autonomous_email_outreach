@@ -1,6 +1,6 @@
 # Data Sourcing Service
 
-Implementation-oriented design for the **Sourcing** service: validated discovery, enrichment, POC identity cues, hints, provenance — aligned with [`data_sourcing_map.md`](../data_sourcing_map.md), additive Plan filters in [`planning_service_role.md`](../planning_service_role.md), and the system overview in [`README.md`](../README.md).
+Implementation-oriented design for the **Sourcing** service: validated discovery, enrichment, POC identity cues, hints, provenance — aligned with [`data_sourcing_map.md`](./data_sourcing_map.md), the **three-operation enrichment model** in [`enrichment_redesign.md`](./enrichment_redesign.md), additive Plan filters in [`planning_service_role.md`](./planning_service_role.md), and the system overview in [`README.md`](../README.md).
 
 ## Table of contents
 
@@ -20,15 +20,17 @@ Implementation-oriented design for the **Sourcing** service: validated discovery
 
 ## 1. Purpose and service boundary
 
-**Role:** Mine public data to find **relevant companies**, enrich **company records**, and attach **POC identities** (names, titles, public profile cues) matching the Plan Document — using a **cache-first** strategy aligned with [`data_sourcing_map.md`](../data_sourcing_map.md) (directories → validation → enrichment). **Commercial work email acquisition** is **not** part of this service.
+**Role:** Mine public data to find **relevant companies**, enrich **company records**, and attach **POC identities** (names, titles, public profile cues) matching the Plan Document — using a **cache-first** strategy aligned with [`data_sourcing_map.md`](./data_sourcing_map.md) (directories → validation → enrichment). **Commercial work email acquisition** is **not** part of this service.
+
+**Enrichment execution:** For each validated company, run the **three fixed enrichment operations** defined in [`enrichment_redesign.md`](./enrichment_redesign.md) in parallel where practical: (1) LinkedIn POC via `{company_name} LinkedIn` SERP → first LinkedIn URL → **crawl4ai** single-page scrape (**no navigation**) → LLM POC extraction; (2) YC directory founders + latest news; (3) company website landing page only via SERP-if-needed → **crawl4ai** (**no navigation**) → LLM; login-gated landing → **drop** for op 3 per redesign.
 
 **In scope**
 
-- Consume `sourcing.requested` and load the **Plan Document** (via `plan_id`) for attribute targets, [`planning_service_role.md`](../planning_service_role.md) **search blocks** where present, and constraints.
-- Build an **attribute-to-source map** before calling external systems.
+- Consume `sourcing.requested` and load the **Plan Document** (via `plan_id`) for attribute targets, [`planning_service_role.md`](./planning_service_role.md) **search blocks** where present, and constraints.
+- Build planning/config hooks (e.g. **attribute-to-source map** or equivalent) where useful for **discovery** and optional extensions — while treating the **three enrichment ops** as the canonical backend for core company + POC signals ([§5](#5-attribute-source-map)).
 - **Company discovery:** validated candidate domains from Tier A directories and Tier B hints (validated before enrichment spend).
-- **Company enrichment:** fill `company_record` fields and `extra` from approved sources (web, careers, filings, SERP scoped to known companies, etc.).
-- **POC identity:** identify plausible contacts from public sources permitted by policy (sites, announcements, Product Hunt makers, etc.) and persist `persons` skeletons linked to companies — **without** Apollo/Hunter email waterfall.
+- **Company enrichment:** persist merged outputs from the three operations into `company_record` / `extra` with **per-operation provenance**; optional campaign-specific sources (careers, Form D, extra SERP) remain **out of scope** for the collapsed model unless explicitly added as separate tracked operations.
+- **POC identity (core path):** derived primarily from **enrichment op 1** (LinkedIn page bundle + LLM); other public cues (e.g. Product Hunt makers) may supplement when configured — **without** Apollo/Hunter email waterfall.
 - Normalize output, attach **provenance**, compute **data completeness**, emit `sourcing.completed` / `sourcing.partial`.
 
 **Out of scope (belongs to Prospecting)**
@@ -42,7 +44,7 @@ Implementation-oriented design for the **Sourcing** service: validated discovery
 
 | Service    | Responsibility |
 |-----------|----------------|
-| **Planning** | Produces the Plan Document: `company_signals`, `poc_signals`, `scoring_weights`, `personalization_hooks`, tone, angle, plus optional per-source **`search_blocks`**, **`global_filters`**, and **`outreach_context`** ([`planning_service_role.md`](../planning_service_role.md)). |
+| **Planning** | Produces the Plan Document: `company_signals`, `poc_signals`, `scoring_weights`, `personalization_hooks`, tone, angle, plus optional per-source **`search_blocks`**, **`global_filters`**, and **`outreach_context`** ([`planning_service_role.md`](./planning_service_role.md)). |
 | **Sourcing** | Validated discovery + enrichment + **POC identity**; persists companies, hints, POC skeletons with provenance. **No** Apollo/Hunter email passes. |
 | **Prospecting** | **Apollo / Hunter-style email discovery & verification**, ICP scoring, semantic search over `extra`, ranking vs thresholds — then hands ranked prospects toward messaging. |
 
@@ -88,23 +90,29 @@ Optional extension for observability (if all consumers tolerate extra keys):
 
 ## 4. End-to-end pipeline
 
-1. **Load plan** — Fetch `plan_record` / Plan Document by `plan_id`; read `company_signals`, `poc_signals`, `personalization_hooks`, **`search_blocks` / sourcing config** ([`planning_service_role.md`](../planning_service_role.md)), and campaign flags.
+1. **Load plan** — Fetch `plan_record` / Plan Document by `plan_id`; read `company_signals`, `poc_signals`, `personalization_hooks`, **`search_blocks` / sourcing config** ([`planning_service_role.md`](./planning_service_role.md)), and campaign flags.
 2. **Cache check** — For each candidate or seed entity, apply the **cache-first** rules from [README.md](../README.md) (no data → scrape all; partial → gap fill; fresh + complete → no scrape).
-3. **Build attribute source map** — Deterministic map from requested attributes → sources, templates, schemas, fallbacks ([§5](#5-attribute-source-map)); align sources with [`data_sourcing_map.md`](../data_sourcing_map.md).
-4. **Company discovery** — Tier A directories (YC, Crunchbase, Product Hunt) plus Tier B hints (HN, public LinkedIn company pages) validated before enrichment ([`data_sourcing_map.md`](../data_sourcing_map.md)).
+3. **Build planning/config maps** — Where needed for discovery or optional extensions: attribute → source templates ([§5](#5-attribute-source-map)). Core enrichment does not require an open-ended per-attribute matrix for the three ops ([`enrichment_redesign.md`](./enrichment_redesign.md)).
+4. **Company discovery** — Tier A directories (YC, Product Hunt, etc.) plus Tier B hints (HN, LinkedIn discovery hints) validated before enrichment ([`data_sourcing_map.md`](./data_sourcing_map.md)).
 5. **Candidate validation** — Relevance, deduplication, domain sanity, blocklists ([§8](#8-validation-gates-and-failure-modes)).
-6. **Company enrichment** — Website/blog + careers pipelines (crawl4ai + LLM), targeted filings (e.g. SEC Form D), SERP anchored to `(name, domain)` only ([§6](#6-source-catalog-and-usage-rules)).
-7. **POC identity mining** — Public sources only — fill names/titles/URLs per `poc_signals` without commercial email enrichment.
-8. **Enrichment validation** — Schema, evidence, completeness.
+6. **Company enrichment (three operations)** — Run in parallel with independent failure semantics ([`enrichment_redesign.md`](./enrichment_redesign.md)): **Op 1** SERP + LinkedIn single-page crawl4ai + LLM POC; **Op 2** YC directory; **Op 3** landing-page-only website crawl4ai + LLM. Merge structured outputs + provenance per op.
+7. **POC identity** — Primary path: **op 1** output (`poc_name`, `poc_title`, `poc_profile_url`, `evidence_url`); supplement per Plan / policy only.
+8. **Enrichment validation** — **Per-operation**: schema/evidence for each op’s outputs; completeness across the three slices ([§8](#8-validation-gates-and-failure-modes)).
 9. **Store and emit** — Persist MongoDB documents + hints, publish `sourcing.completed` or `sourcing.partial`.
 
 ```mermaid
 flowchart TD
-  PlanReady["Plan Document Ready"] --> BuildMap["Build Attribute Source Map"]
-  BuildMap --> CompanyDiscovery["Find Relevant Companies"]
+  PlanReady["Plan Document Ready"] --> PlanningConfig["Planning / discovery config"]
+  PlanningConfig --> CompanyDiscovery["Find Relevant Companies"]
   CompanyDiscovery --> CandidateValidation["Validate Candidate Companies"]
-  CandidateValidation --> CompanyMining["Enrich Companies + POC Identity"]
-  CompanyMining --> EnrichmentValidation["Validate Enrichment"]
+  CandidateValidation --> EnrichParallel["Three enrichment ops (parallel)"]
+  EnrichParallel --> OpLI["Op 1: SERP + LinkedIn page → crawl4ai → LLM POC"]
+  EnrichParallel --> OpYC["Op 2: YC directory"]
+  EnrichParallel --> OpWeb["Op 3: Website landing → crawl4ai → LLM"]
+  OpLI --> MergeStore["Merge outputs + provenance"]
+  OpYC --> MergeStore
+  OpWeb --> MergeStore
+  MergeStore --> EnrichmentValidation["Per-op validation"]
   EnrichmentValidation --> StoreData["Store Company Records"]
   StoreData --> PublishEvent["Publish Sourcing Event"]
 ```
@@ -113,7 +121,9 @@ flowchart TD
 
 ## 5. Attribute source map
 
-Before calling external APIs or scrapers, Sourcing builds a **AttributeSourceMap**: a list of rules that bind each logical attribute to one or more sources and extraction strategies.
+[`enrichment_redesign.md`](./enrichment_redesign.md) collapses **core enrichment** into **three fixed operations** with **per-operation validation**. The **AttributeSourceMap** pattern below remains useful for **discovery** (plan-driven search blocks, directory selection), **optional extensions** (extra SERP templates, careers), and backward compatibility — but it is **not** the driver for how ops 1–3 are validated; each op has a fixed contract (inputs, scrape constraints, outputs).
+
+Before calling external APIs or scrapers outside the three-op core, Sourcing may still build an **AttributeSourceMap**: a list of rules that bind each logical attribute to one or more sources and extraction strategies.
 
 ### 5.1 Rule object schema
 
@@ -135,9 +145,9 @@ Before calling external APIs or scrapers, Sourcing builds a **AttributeSourceMap
 | Mode | Purpose | SERP | YC directory | HN newest |
 |------|---------|------|--------------|-----------|
 | **Discovery** | Build a list of companies | **No** (not for broad lists) | **Yes** (if ICP = startups) | **Hints only** — queue URLs/names for validation, not authoritative |
-| **Enrichment** | Fill fields for a known `name` + `domain` | **Yes** — company-specific queries only | **Yes** — profile page if company is in YC | **Optional** — e.g. “Show HN” link to product page |
+| **Enrichment** | Fill fields for a known `name` + `domain` | **Yes** — op 1: `{company_name} LinkedIn`; op 3 URL resolution; optional anchored queries beyond core | **Yes** — **op 2** founders + news when listed | **Optional** — e.g. “Show HN” link to product page |
 
-**Rule:** **SERP** must include an anchor: company name and/or registered domain, so results are tied to a specific entity—not used to discover the open web unbounded.
+**Rule:** **SERP** for enrichment must stay **company-scoped**: op 1 and op 3 use patterns from [`enrichment_redesign.md`](./enrichment_redesign.md). Do not use unconstrained SERP to harvest large company lists.
 
 ### 5.3 Example (illustrative YAML)
 
@@ -187,23 +197,27 @@ attributes:
 
 ### 6.3 SERP (search engine results page)
 
-- **Use:** **Enrichment only** after a specific company is identified (name/domain).
-- **Typical queries:** Funding, press, careers page, product launch, site-specific pages.
+- **Use (core enrichment):** **Op 1** — query `{company_name}` + `LinkedIn`; take the **first linkedin.com URL** in results, then single-page crawl ([`enrichment_redesign.md`](./enrichment_redesign.md)). **Op 3** — if company URL unknown, take **top result** as canonical website for landing-page fetch.
+- **Use (optional extensions):** Anchored funding / press / careers discovery — only with `(name, domain)` (or equivalent) in the query.
 - **Do not:** Use unconstrained SERP to harvest large company lists (cost, quality, policy).
 
-### 6.4 LinkedIn (public company pages)
+### 6.4 LinkedIn (enrichment op 1 + discovery hints)
 
-- **Use:** **Discovery hints** + light company-profile enrichment when policy allows scraping public listing pages (`data_sourcing_map.md` Tier B / enrichment).
-- **Typical attributes:** Employee range band, industry, description, canonical company URL — **not** logged-in recruiter APIs unless separately licensed.
+- **Enrichment op 1:** SERP-driven resolution to a **single company URL**, then **crawl4ai** on that URL **only** — **no navigation** (no tabs, “See all”, or following employee/profile links). Bundle visible **About**, **people shown on the page**, **location**, **recent posts** for LLM POC extraction. Login wall → treat as miss / fail-soft for that op.
+- **Discovery (Tier B):** Public listing hints only (industry, band, etc.) — distinct URL discovery path from op 1; see [`data_sourcing_map.md`](./data_sourcing_map.md).
 
-### 6.5 Company website / blog / careers
+### 6.5 Company website (enrichment op 3)
 
-- **Use:** Primary **enrichment** for description, stack hints, hiring signals, and personalization hooks.
-- **Mechanism:** crawl4ai → markdown → low-cost LLM extraction ([§7](#7-scraping-and-extraction-pipeline)).
+- **Use:** **Landing page only** for summary, value props, signals visible on that page ([`enrichment_redesign.md`](./enrichment_redesign.md)).
+- **Mechanism:** Resolve URL (direct or SERP) → **crawl4ai** → markdown → low-cost LLM; **no** crawl of `/about`, `/blog`, `/careers` unless that path is promoted to a separate tracked operation.
 
-### 6.6 Alignment with README + data sourcing map
+### 6.6 Careers / blog / filings (optional extensions)
 
-Sourcing pipelines follow **`data_sourcing_map.md`** *Phase 1 (discovery)* and *Phase 2 (enrichment)* — **directories and APIs where available**, scoped **SERP**, and **headless crawl** for owned web properties — **not** the legacy “Layer 1 = commercial contact APIs” split (those APIs are bounded to Prospecting email workflows in [README.md](../README.md)). Use `fallback_sources` in attribute rules to encode the Tier A/Tier B precedence from the map.
+- **Use:** Not part of the three-op collapsed model; enable only when explicitly configured as additional operations or hints ([`data_sourcing_map.md`](./data_sourcing_map.md) optional extensions).
+
+### 6.7 Alignment with README + data sourcing map + enrichment redesign
+
+Sourcing follows **`data_sourcing_map.md`** for discovery tiers and **`enrichment_redesign.md`** for the **three enrichment operations**. Scoped **SERP** + **single-page crawl4ai** replace an open-ended “scrape blog + careers + everything” default for core enrichment. Commercial contact APIs remain in Prospecting ([README.md](../README.md)). Use `fallback_sources` in attribute rules for discovery / optional paths only where applicable.
 
 ---
 
@@ -211,11 +225,11 @@ Sourcing pipelines follow **`data_sourcing_map.md`** *Phase 1 (discovery)* and *
 
 ### 7.1 Stages
 
-1. **URL discovery** — From directory links, SERP results, sitemap, or known `/about`, `/blog`, `/careers` paths.
-2. **Fetch** — Headless fetch with timeouts, redirect limits, and content-type checks.
-3. **Markdown conversion** — **crawl4ai** (or equivalent) converts HTML to **markdown** for stable, token-efficient input.
-4. **Structured extraction** — A **low-cost LLM** maps markdown (and/or API JSON) to the **extraction JSON Schema** defined in the attribute map.
-5. **Evidence capture** — Store snippet spans, selectors, or char offsets where feasible; always store **canonical URL** and **retrieved_at**.
+1. **URL discovery** — **Core enrichment:** op 1 SERP → first LinkedIn URL; op 3 direct URL or SERP top website result ([`enrichment_redesign.md`](./enrichment_redesign.md)). **Extensions:** directory links, optional `/careers` paths, etc., only when enabled outside the three-op default.
+2. **Fetch** — Headless fetch with timeouts, redirect limits per redesign (e.g. redirect once for landing page).
+3. **Markdown conversion** — **crawl4ai** (or equivalent) converts HTML to **markdown** for stable, token-efficient input. **Ops 1 & 3:** one page per op — **no multi-page crawl / navigation** for core enrichment.
+4. **Structured extraction** — **Low-cost LLM** for ops 1 & 3; structured scrape/API parse for op 2 (YC). Map to each operation’s output shape + provenance.
+5. **Evidence capture** — Store snippet spans, selectors, or char offsets where feasible; always store **canonical URL** and **retrieved_at** per operation.
 
 ### 7.2 LLM extraction contract
 
@@ -260,6 +274,7 @@ Use in logs, `sourcing.partial` context, and internal `company_record` status if
 | `source_unavailable` | HTTP error, rate limit, or API down. |
 | `extraction_failed` | LLM/parse error or schema mismatch. |
 | `validation_failed` | Evidence or sanity check failed. |
+| `dropped_login_required` | Website landing page gated (enrichment op 3); emit per [`enrichment_redesign.md`](./enrichment_redesign.md). |
 
 ---
 
@@ -397,5 +412,6 @@ Collection: `hints`. See `src/shared/models/hint.py` (`Hint` / Beanie).
 
 - **v1** — Initial implementation-oriented Sourcing spec (attribute map, sources, pipeline, storage, queues).
 - **v3** — Service boundary refresh: POC identity vs Apollo/Hunter; MongoDB wording; aligns docs with README + sourcing map rewrite.
+- **v4** — Enrichment aligned with [`enrichment_redesign.md`](./enrichment_redesign.md): three parallel ops (LinkedIn SERP → single-page crawl4ai, YC, landing-only website), per-op validation, attribute map scoped to discovery/optional extensions.
 
-See also: [README.md](../README.md), [`data_sourcing_map.md`](../data_sourcing_map.md), [`planning_service_role.md`](../planning_service_role.md), [Repository_structure.md](../Repository_structure.md).
+See also: [README.md](../README.md), [`data_sourcing_map.md`](./data_sourcing_map.md), [`enrichment_redesign.md`](./enrichment_redesign.md), [`planning_service_role.md`](./planning_service_role.md), [Repository_structure.md](../Repository_structure.md).

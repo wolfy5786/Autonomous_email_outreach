@@ -116,6 +116,7 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 **Responsibilities:**
 - Accept a campaign configuration payload (ICP, product profile, target volume, email channel config).
 - Publish a `plan.requested` event to kick off the Planning Service.
+- After Sourcing finishes a batch, consume `sourcing.completed` and publish `prospecting.requested` so Prospecting work is explicit on its own queue.
 - Monitor queue depths and service health.
 - Handle retry logic for failed pipeline stages.
 - Publish a `campaign.completed` event when all prospects have been processed.
@@ -170,7 +171,7 @@ There is **no user authentication**. A **Web UI** provides a full dashboard for 
 **Role:** Turns sourced companies + POC identities into ranked, email-ready prospects.
 
 **Responsibilities:**
-- Consume `sourcing.completed` events.
+- Consume `prospecting.requested` events (published by the Orchestrator after `sourcing.completed`).
 - Load the Plan Document for the current campaign.
 - **Acquire and verify commercial contact emails** (Apollo.io, Hunter.io, or equivalent APIs) wherever policy allows — this step sits **after** Sourcing identities exist.
 - For each POC/company pairing, compute an **ICP fit score** across the Plan weights; use semantic search on `extra` fields when schemas diverge (see [Semantic search](#semantic-search-on-unknown-columns)).
@@ -445,8 +446,9 @@ All inter-service communication is asynchronous via named message queues. Servic
 | `plan.requested` | Orchestrator | Planning Service | `{ campaign_id }` |
 | `plan.ready` | Planning Service | Orchestrator, Sourcing Service | `{ campaign_id, plan_id }` |
 | `sourcing.requested` | Orchestrator | Sourcing Service | `{ campaign_id, plan_id, target_entities[] }` |
-| `sourcing.completed` | Sourcing Service | Orchestrator, Prospecting Service | `{ campaign_id, entity_ids[] }` |
+| `sourcing.completed` | Sourcing Service | Orchestrator | `{ campaign_id, entity_ids[] }` |
 | `sourcing.partial` | Sourcing Service | Orchestrator | `{ campaign_id, entity_id, missing_fields[] }` |
+| `prospecting.requested` | Orchestrator | Prospecting Service | `{ campaign_id, plan_id, entity_ids[] }` |
 | `prospecting.completed` | Prospecting Service | Orchestrator, Messaging Service | `{ campaign_id, ranked_prospects[] }` |
 | `messaging.requested` | Orchestrator | Messaging Service | `{ campaign_id, poc_id }` |
 | `draft.written` | Messaging Service | Orchestrator | `{ campaign_id, draft_id, poc_id, email_draft_ref }` |
@@ -635,7 +637,11 @@ When the Prospecting Service or any downstream service needs to query on a field
    → Publishes sourcing.completed
         │
         ▼
-6. Prospecting Service consumes sourcing.completed
+6. Orchestrator consumes sourcing.completed
+   → Publishes prospecting.requested with campaign, plan, and entity IDs
+        │
+        ▼
+7. Prospecting Service consumes prospecting.requested
    → Loads Plan Document
    → Apollo/Hunter/email APIs fill deliverable inbox candidates + verification flags
    → Scores companies + POCs vs ICP weights; semantic search spans `extra` blobs
@@ -644,11 +650,11 @@ When the Prospecting Service or any downstream service needs to query on a field
    → Web UI shows pipeline progress (stage: prospecting)
         │
         ▼
-7. Orchestrator publishes messaging.requested for top N prospects
+8. Orchestrator publishes messaging.requested for top N prospects
    → Web UI shows pipeline progress (stage: messaging)
         │
         ▼
-8. Messaging Service consumes messaging.requested
+9. Messaging Service consumes messaging.requested
    → Loads prospect record + Plan Document
    → Generates personalized email draft via LLM
    → Writes draft to user's email account via provider Draft API
@@ -658,18 +664,18 @@ When the Prospecting Service or any downstream service needs to query on a field
    → On failure: publishes draft.failed (retries up to configured limit)
         │
         ▼
-9. Orchestrator receives draft.written events
+10. Orchestrator receives draft.written events
    → Updates campaign progress
    → Web UI displays notification: "Draft created for [POC name] at [Company]"
    → User can find the draft in their email client, review, edit, and send manually
         │
         ▼
-10. When all prospects are processed: Orchestrator publishes campaign.completed
+11. When all prospects are processed: Orchestrator publishes campaign.completed
     → Campaign stats available at /api/campaigns/:id/stats
     → Web UI shows campaign as completed with summary statistics
 ```
 
-**The system's responsibility ends at step 8.** Once a draft is written to the user's email account, the prospect task is marked complete. All further editing and sending is done by the user in their email client.
+**The system's responsibility ends at step 9.** Once a draft is written to the user's email account, the prospect task is marked complete. All further editing and sending is done by the user in their email client.
 
 ---
 

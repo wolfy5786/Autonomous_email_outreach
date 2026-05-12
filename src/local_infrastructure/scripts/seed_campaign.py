@@ -11,29 +11,34 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 
 SAMPLE_ICP = {
-    "industry": "Enterprise software & internal platforms",
-    "employee_range": [50, 500],
-    "stack_includes": ["Java", "JDBC", "Spring", "Spring Boot", "Maven/Gradle"],
-    "geography": ["United States"],
-    "pain": "Need a software engineer strong in Java with JDBC, Spring, and common Java frameworks, with about three years of shipping experience.",
+    "industry": "Seed–Series B teams shipping customer-facing LLM copilots and multi-step agents over messy enterprise knowledge — hybrid RAG (vector + BM25) across Confluence/SharePoint/Notion/Snowflake exports, tool-calling into internal REST/GraphQL, per-tenant prompt + router + model profiles (frontier APIs and self-hosted vLLM), and contracts that mention groundedness, refusal behavior, and p95 latency SLOs",
+    "employee_range": [20, 400],
+    "stack_includes": [
+        "Orchestration in Python or TypeScript (LangGraph, Temporal, or bespoke state machines) with retries, idempotent tools, and per-session token budgets",
+        "Vector stores and search (Pinecone, Weaviate, pgvector) plus embedding pipelines, chunking policies, and rerankers tuned per customer vertical",
+        "Inference gateways with routing, caching, JSON-mode guards, and shadowing of new prompts/models before full rollout",
+        "Eval and observability hooks in CI (golden sets, pairwise judges, offline regression gates) alongside classic APM for the non-LLM surface area",
+    ],
+    "geography": ["United States", "Canada", "United Kingdom"],
+    "pain": "Shipping near-daily prompt, router, and retrieval changes without silent regressions — retrieval drift that drops NDCG overnight, tool-policy escapes, cost spikes from unbounded context, and buyer-driven requests for reproducible eval reports, trace-level provenance for bad answers, and evidence that red-team suites actually gate prod.",
 }
 
 SAMPLE_PRODUCT = {
-    "name": "Mid-level Java backend engineer (~3 YOE)",
-    "value_prop": "Java developer with roughly three years building and maintaining services using JDBC for data access, Spring/Spring Boot, and familiar supporting frameworks in typical enterprise stacks.",
-    "pricing": "full-time or contract-to-hire",
+    "name": "Langfuse",
+    "value_prop": "Open-source LLM engineering platform for tracing, evals, datasets, and prompt/version management — one place to debug multi-step agents, score production traffic, compare experiments, and show buyers how quality and safety checks map to live traces instead of ad-hoc notebooks and spreadsheets.",
+    "pricing": "Cloud tiers (usage-based on traces and events) plus self-hosted / enterprise plans for VPC deploys, SSO, and support SLAs",
     "differentiators": [
-        "JDBC and relational persistence",
-        "Spring ecosystem (Boot, MVC, Data)",
-        "broad Java framework literacy beyond a single stack",
+        "Trace-first UX that stays usable when graphs branch ( tools, parallel calls, nested spans ) rather than flat chat logs",
+        "Evals and datasets tied to the same IDs as production traces so regressions are bisectable to a prompt, retriever version, or model swap",
+        "Self-hosting path for teams blocked from SaaS observability vendors but still needing collaboration across ML, backend, and product on one audit trail",
     ],
 }
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--id", default="c-demo-001")
-    parser.add_argument("--name", default="Demo Kubernetes platforms")
+    parser.add_argument("--id", default="c-demo-002")
+    parser.add_argument("--name", default="Arjun")
     parser.add_argument(
         "--mongo-url", default=os.getenv("MONGO_URL", "mongodb://localhost:27017")
     )

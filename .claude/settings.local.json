@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($env:PYTHONPATH = \"src;src/sourcing\"; python -m pytest src/sourcing/tests/test_product_hunt_plan_filters.py src/sourcing/tests/test_yc_directory_plan_filters.py src/sourcing/tests/test_hacker_news_plan_filters.py -q)"
+    ]
+  }
+}
