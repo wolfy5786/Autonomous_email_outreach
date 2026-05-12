@@ -167,6 +167,32 @@ services:
       - "8090:8090"
     restart: unless-stopped
 
+  # TS gateway service for the web UI. Owns campaigns Mongo collection and
+  # campaign_status Postgres table, publishes the *.requested events.
+  # The hostname `gateway` is the alias nginx in the web container expects.
+  orchestrator:
+    build:
+      context: ./src
+      dockerfile: orchestrator/Dockerfile
+    container_name: email-outreach-orchestrator
+    hostname: gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "3000"
+      MONGO_URI: mongodb://mongo:27017/email_outreach
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      POSTGRES_URL: postgres://${POSTGRES_USER:-orchestrator}:${POSTGRES_PASSWORD:-orchestrator}@postgres:5432/${POSTGRES_DB:-email_outreach}
+      LOG_LEVEL: info
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
   # Operator + marketing web app. SPA served by nginx; nginx also proxies
   # /api/* to the gateway service (override target via GATEWAY_URL env).
   web:
@@ -178,8 +204,11 @@ services:
         # Set to e.g. http://gateway:8000 to bypass the proxy at build time.
         VITE_API_BASE_URL: ""
     container_name: email-outreach-web
+    depends_on:
+      orchestrator:
+        condition: service_started
     environment:
-      GATEWAY_URL: "http://gateway:8000"
+      GATEWAY_URL: "http://gateway:3000"
     ports:
       - "8082:8082"
     restart: unless-stopped

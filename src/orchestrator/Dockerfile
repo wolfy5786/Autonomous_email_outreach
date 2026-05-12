@@ -12,9 +12,11 @@ WORKDIR /app
 COPY orchestrator/package*.json orchestrator/
 RUN cd orchestrator && npm ci
 
-# Sources orchestrator needs at compile time:
+# Sources orchestrator needs at compile time.
+# tsconfig has rootDir: ".." and include: ["../local_infrastructure/**/*", "../shared/**/*"]
 COPY orchestrator/ orchestrator/
 COPY local_infrastructure/ local_infrastructure/
+COPY shared/ shared/
 
 # Run tsc — orchestrator/tsconfig has outDir: "./dist" and rootDir: "..",
 # so output lands at /app/orchestrator/dist/orchestrator/main.js
