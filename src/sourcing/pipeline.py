@@ -6,6 +6,7 @@ Queue contract: ``sourcing.requested`` — see README and ``docs/data-sourcing-s
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -24,7 +25,8 @@ from cache_check import (
     sourcing_cache_check,
 )
 from discovery import DISCOVERY_SOURCES, DiscoveryContext
-from enrichment import ENRICHMENT_BY_SOURCE_NAME, EnrichmentContext
+from enrichment import ENRICHMENT_OPERATIONS, EnrichmentContext
+from enrichment.base import EnrichmentOperation, OperationResult
 from shared.models.company import CompanyRecord, Headquarters
 from shared.models.enums import HintCategory, SourceType
 from shared.models.hint import Hint
@@ -32,7 +34,6 @@ from shared.models.plan import PlanRecord
 from publisher import SourcingAMQPPublisher
 from source_map import AttributeSourceMapRule, build_source_map
 from validation.candidate import validate_candidates
-from validation.enrichment import validate_enrichment
 
 logger = logging.getLogger("sourcing.pipeline")
 
@@ -158,8 +159,7 @@ class SourcingPipeline:
         companies_for_enrichment = self._merge_companies_for_enrichment(
             disc_cache, src_cache, persisted=persisted
         )
-        await self._run_enrichment(job, plan, source_map, companies_for_enrichment)
-        self._validate_enrichment_stage(source_map)
+        await self._run_enrichment(job, plan, companies_for_enrichment)
 
         logger.info(
             "stage=pipeline_slice_completed campaign_id=%s plan_id=%s request_id=%s",
@@ -487,9 +487,15 @@ class SourcingPipeline:
         self,
         job: SourcingRequestedJob,
         plan: PlanRecord,
-        source_map: list[AttributeSourceMapRule],
         companies: list[Any],
     ) -> None:
+        """Run the three fixed enrichment operations per company in parallel.
+
+        Per-attribute source-map dispatch was removed in the enrichment redesign
+        (see ``design_docs/enrichment_redesign.md``); operations now drive
+        themselves off ``CompanyRecord.name`` (+ optional ``website_url`` /
+        ``domain``) and emit a single ``OperationResult`` each.
+        """
         if not companies:
             logger.info(
                 "stage=enrichment_skip campaign_id=%s reason=no_companies_in_cache",
@@ -497,66 +503,98 @@ class SourcingPipeline:
             )
             return
 
-        enrichment_rules = [r for r in source_map if r.allowed_for_enrichment]
-        sorted_rules = sorted(
-            enrichment_rules,
-            key=lambda r: (r.priority, r.attribute, r.source_name),
+        logger.info(
+            "stage=enrichment_start campaign_id=%s companies=%s operations=%s",
+            job.campaign_id,
+            len(companies),
+            [op.operation_name for op in ENRICHMENT_OPERATIONS],
         )
-        for company in companies:
-            missing_fields: list[str] = []
-            for rule in sorted_rules:
-                impl = ENRICHMENT_BY_SOURCE_NAME.get(rule.source_name)
-                if impl is None:
-                    logger.debug(
-                        "stage=enrichment_no_handler campaign_id=%s source_name=%s attribute=%s",
-                        job.campaign_id,
-                        rule.source_name,
-                        rule.attribute,
-                    )
-                    continue
-                ctx = EnrichmentContext(
-                    campaign_id=job.campaign_id,
-                    company=company,
-                    plan=plan,
-                    missing_fields=missing_fields,
-                )
-                try:
-                    result = await impl.enrich(ctx)
-                    logger.info(
-                        "stage=enrichment_source_ok campaign_id=%s company_id=%s source=%s attribute=%s keys=%s",
-                        job.campaign_id,
-                        company.id,
-                        rule.source_name,
-                        rule.attribute,
-                        list(result.attributes.keys()),
-                    )
-                except NotImplementedError:
-                    logger.info(
-                        "stage=enrichment_not_implemented campaign_id=%s company_id=%s source=%s attribute=%s",
-                        job.campaign_id,
-                        company.id,
-                        rule.source_name,
-                        rule.attribute,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "stage=enrichment_error campaign_id=%s company_id=%s source=%s error=%s",
-                        job.campaign_id,
-                        company.id,
-                        rule.source_name,
-                        e,
-                        exc_info=True,
-                    )
 
-    def _validate_enrichment_stage(self, source_map: list[AttributeSourceMapRule]) -> None:
-        if not source_map:
-            return
+        for company in companies:
+            ctx = EnrichmentContext(
+                campaign_id=job.campaign_id,
+                company=company,
+                plan=plan,
+            )
+            results = await asyncio.gather(
+                *(self._run_one_operation(op, ctx) for op in ENRICHMENT_OPERATIONS),
+                return_exceptions=False,
+            )
+            await self._apply_enrichment_results(job, company, results)
+
+    async def _run_one_operation(
+        self,
+        op: EnrichmentOperation,
+        ctx: EnrichmentContext,
+    ) -> OperationResult | None:
+        """Execute a single operation, isolating its failures from siblings."""
         try:
-            validate_enrichment(None, source_map[0])
+            result = await op.run(ctx)
         except NotImplementedError:
             logger.info(
-                "stage=enrichment_validation_not_implemented sample_rule_source=%s",
-                source_map[0].source_name,
+                "stage=enrichment_not_implemented campaign_id=%s company_id=%s operation=%s",
+                ctx.campaign_id,
+                ctx.company.id,
+                op.operation_name,
+            )
+            return None
+        except Exception as e:
+            logger.warning(
+                "stage=enrichment_error campaign_id=%s company_id=%s operation=%s error=%s",
+                ctx.campaign_id,
+                ctx.company.id,
+                op.operation_name,
+                e,
+                exc_info=True,
+            )
+            return None
+
+        if result.dropped:
+            logger.info(
+                "stage=enrichment_dropped campaign_id=%s company_id=%s operation=%s reason=%s",
+                ctx.campaign_id,
+                ctx.company.id,
+                op.operation_name,
+                result.drop_reason,
+            )
+        else:
+            logger.info(
+                "stage=enrichment_ok campaign_id=%s company_id=%s operation=%s keys=%s",
+                ctx.campaign_id,
+                ctx.company.id,
+                op.operation_name,
+                sorted(result.attributes.keys()),
+            )
+        return result
+
+    async def _apply_enrichment_results(
+        self,
+        job: SourcingRequestedJob,
+        company: CompanyRecord,
+        results: list[OperationResult | None],
+    ) -> None:
+        """Merge non-dropped operation outputs into ``company.extra`` + provenance and save."""
+        usable = [r for r in results if r is not None and not r.dropped and r.attributes]
+        if not usable:
+            return
+
+        for result in usable:
+            for key, value in result.attributes.items():
+                company.extra[key] = value
+            for key, prov in result.provenance.items():
+                company.provenance[key] = prov
+
+        company.freshness_timestamp = datetime.now(timezone.utc)
+
+        try:
+            await company.save()
+        except Exception as e:
+            logger.warning(
+                "stage=enrichment_persist_failed campaign_id=%s company_id=%s error=%s",
+                job.campaign_id,
+                company.id,
+                e,
+                exc_info=True,
             )
 
 
