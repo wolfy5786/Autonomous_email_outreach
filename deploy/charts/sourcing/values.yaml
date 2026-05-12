@@ -1,28 +1,41 @@
-replicaCount: 1
+replicaCount: 3
 
 image:
-  repository: ""  # Set via CI: <account>.dkr.ecr.us-west-2.amazonaws.com/email-outreach/sourcing
-  tag: "latest"
+  repository: ghcr.io/wolfy5786/sourcing
+  tag: latest
   pullPolicy: IfNotPresent
-
-service:
-  type: ClusterIP
-  port: 3000
 
 resources:
   requests:
-    cpu: 100m
-    memory: 256Mi
-  limits:
-    cpu: 500m
+    cpu: 200m
     memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
 
-scaler:
-  type: hpa       # hpa | keda
-  minReplicas: 1
-  maxReplicas: 4
-  targetCPU: 70
-
-serviceAccount:
-  create: true
-  annotations: {}
+env:
+  - name: RABBITMQ_URL
+    valueFrom:
+      secretKeyRef:
+        name: sourcing-secrets
+        key: rabbitmq-url
+  - name: MONGO_URI
+    valueFrom:
+      secretKeyRef:
+        name: sourcing-secrets
+        key: mongo-uri
+  - name: REDIS_URL
+    valueFrom:
+      secretKeyRef:
+        name: sourcing-secrets
+        key: redis-url
+  - name: API_RATE_LIMIT
+    value: "2.0"
+  - name: MAX_RETRIES
+    value: "3"
+  - name: ENABLE_YC
+    value: "true"
+  - name: ENABLE_HN
+    value: "true"
+  - name: ENABLE_PH
+    value: "false"
