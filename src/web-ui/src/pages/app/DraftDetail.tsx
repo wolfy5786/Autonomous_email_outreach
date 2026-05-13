@@ -136,36 +136,77 @@ export default function DraftDetail() {
         </div>
       </div>
 
-      {/* Draft body card */}
+      {/* Draft body card — Gmail-style header */}
       <div className="rounded-xl border border-black/10 bg-white">
-        <div className="px-6 py-4 border-b border-black/5 grid grid-cols-[120px_1fr] gap-2 text-sm">
-          <span className="text-black/40">To</span>
-          <span className="font-mono text-xs">
-            poc:{draft.poc_id} · company:{draft.company_id}
-          </span>
-          <span className="text-black/40 mt-1">Subject</span>
+        {/* Subject as the email title */}
+        <div className="px-6 pt-5 pb-3 border-b border-black/5">
           {editing ? (
             <Input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
+              className="text-lg"
             />
           ) : (
-            <span className="font-medium">{draft.subject}</span>
+            <h2 className="text-xl font-semibold">{draft.subject}</h2>
           )}
         </div>
 
-        <div className="px-6 py-5">
+        {/* Sender + recipient lines */}
+        <div className="px-6 py-4 border-b border-black/5 flex items-start gap-3">
+          {/* Avatar circle with initials */}
+          <div className="size-10 rounded-full bg-black/[0.06] flex items-center justify-center text-sm font-medium text-black/60 shrink-0">
+            {(draft.recipient?.name ?? "?")
+              .split(/\s+/)
+              .map((w) => w[0] ?? "")
+              .join("")
+              .slice(0, 2)
+              .toUpperCase() || "?"}
+          </div>
+          <div className="flex-1 min-w-0 text-sm">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium">
+                {draft.recipient?.name ?? "Unknown recipient"}
+              </span>
+              {draft.recipient?.email && (
+                <span className="text-black/50">
+                  &lt;{draft.recipient.email}&gt;
+                </span>
+              )}
+              {draft.recipient?.company && (
+                <span className="text-black/40">· {draft.recipient.company}</span>
+              )}
+            </div>
+            <div className="mt-0.5 text-xs text-black/40 flex items-center gap-3 flex-wrap">
+              <span>to me</span>
+              <span>{formatDateTime(draft.generated_at)}</span>
+              {draft.recipient?.linkedin_url && (
+                <a
+                  href={draft.recipient.linkedin_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 hover:text-black/70"
+                >
+                  LinkedIn
+                  <ExternalLink className="size-3" />
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Body — render newlines / paragraphs cleanly */}
+        <div className="px-6 py-6">
           {editing ? (
             <Textarea
-              rows={12}
+              rows={14}
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="font-mono text-sm"
+              className="text-sm leading-relaxed"
             />
           ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
+            <div className="text-[15px] leading-7 text-black/85 whitespace-pre-wrap">
               {draft.body}
-            </pre>
+            </div>
           )}
         </div>
 

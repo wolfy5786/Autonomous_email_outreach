@@ -57,6 +57,12 @@ export const endpoints = {
     api.get<CompanyDetail[]>(`/api/campaigns/${campaignId}/companies`),
   getCompany: (id: string) => api.get<CompanyDetail>(`/api/companies/${id}`),
 
+  // Prospects (used for the campaign stat tile; full shape returned by the orchestrator)
+  listCampaignProspects: (campaignId: string) =>
+    api.get<{ campaign_id: string; count: number; prospects: unknown[] }>(
+      `/api/campaigns/${campaignId}/prospects`,
+    ),
+
   // Drafts
   listCampaignDrafts: (campaignId: string) =>
     api.get<Draft[]>(`/api/campaigns/${campaignId}/drafts`),

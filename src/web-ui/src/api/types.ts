@@ -119,6 +119,14 @@ export interface Draft {
   retry_count: number;
   llm_model?: string;
   llm_usage?: LLMUsage;
+  /** Joined from persons + companies by the orchestrator's GET /api/drafts/:id. */
+  recipient?: {
+    name: string | null;
+    email: string | null;
+    company: string | null;
+    company_domain: string | null;
+    linkedin_url: string | null;
+  };
 }
 
 export type TracePhase = "start" | "end" | "error" | "emit";

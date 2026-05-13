@@ -40,6 +40,12 @@ export default function CampaignDetail() {
     enabled: !!id,
   });
 
+  const prospectsQuery = useQuery({
+    queryKey: ["campaign-prospects", id],
+    queryFn: () => endpoints.listCampaignProspects(id!),
+    enabled: !!id,
+  });
+
   if (campaignQuery.isLoading) {
     return (
       <div className="space-y-4">
@@ -90,9 +96,9 @@ export default function CampaignDetail() {
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Companies" value={c.counts?.companies ?? "—"} />
-        <Stat label="Prospects" value={c.counts?.pocs ?? "—"} />
-        <Stat label="Drafts" value={c.counts?.drafts ?? "—"} />
+        <Stat label="Companies" value={companiesQuery.data?.length ?? "—"} />
+        <Stat label="Prospects" value={prospectsQuery.data?.count ?? "—"} />
+        <Stat label="Drafts" value={draftsQuery.data?.length ?? "—"} />
         <Stat label="Created" value={formatDateTime(c.created_at)} mono />
       </div>
 
