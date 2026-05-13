@@ -115,8 +115,11 @@ class PlanContext(BaseModel):
 
     id: str
     campaign_id: str
-    email_tone: str
-    email_angle: str
+    # email_tone/email_angle are nominally required by the design but the planner LLM
+    # sometimes truncates them under tight max_tokens budgets. Default to safe generic
+    # values so draft generation doesn't break on incomplete plans.
+    email_tone: str = "professional, concise"
+    email_angle: str = "value-driven outreach"
     personalization_hooks: list[str] = Field(default_factory=list)
 
 

@@ -56,7 +56,9 @@ class MessagingRepository:
     # ── Reads ──────────────────────────────────────────────────
 
     async def get_campaign_email_account(self, campaign_id: str) -> EmailAccountConfig | None:
-        doc = await self._db["campaigns"].find_one({"_id": campaign_id})
+        doc = await self._db["campaigns"].find_one({"campaign_id": campaign_id})
+        if doc is None:
+            doc = await self._db["campaigns"].find_one({"_id": campaign_id})
         if doc is None:
             doc = await self._db["campaigns"].find_one({"id": campaign_id})
         if doc is None:
