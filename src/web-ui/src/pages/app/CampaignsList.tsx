@@ -1,8 +1,11 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { Megaphone } from "lucide-react";
 
 import { endpoints } from "@/api/endpoints";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   campaignStatusLabel,
@@ -82,19 +85,23 @@ export default function CampaignsList() {
 
             {!isLoading && !isError && campaigns?.length === 0 && (
               <tr>
-                <td
-                  colSpan={6}
-                  className="px-6 py-12 text-center text-black/50"
-                >
-                  No campaigns yet. Create one to start the pipeline.
+                <td colSpan={6} className="p-0">
+                  <EmptyState
+                    icon={<Megaphone className="size-5" />}
+                    title="No campaigns yet"
+                    description="Create a campaign to kick off the pipeline."
+                  />
                 </td>
               </tr>
             )}
 
-            {campaigns?.map((c) => (
-              <tr
+            {campaigns?.map((c, i) => (
+              <motion.tr
                 key={c.id}
                 className="border-b border-black/5 hover:bg-black/[0.02] transition-colors"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.02, 0.4), duration: 0.25 }}
               >
                 <td className="px-6 py-4">
                   <Link
@@ -122,7 +129,7 @@ export default function CampaignsList() {
                 <td className="px-6 py-4 text-right text-black/50">
                   {timeAgo(c.created_at)}
                 </td>
-              </tr>
+              </motion.tr>
             ))}
           </tbody>
         </table>
