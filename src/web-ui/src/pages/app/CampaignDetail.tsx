@@ -31,6 +31,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 
 import { CampaignTimeline } from "@/components/app/CampaignTimeline";
+import { ObservabilityDashboard } from "@/components/app/ObservabilityDashboard";
 import { PipelineStageStrip } from "@/components/app/PipelineStageStrip";
 
 export default function CampaignDetail() {
@@ -313,8 +314,17 @@ export default function CampaignDetail() {
           )}
         </TabsContent>
 
-        <TabsContent value="timeline">
-          <CampaignTimeline campaignId={c.id} />
+        <TabsContent value="timeline" className="space-y-6">
+          <ObservabilityDashboard
+            campaignId={c.id}
+            showActiveCampaignsTile={false}
+          />
+          <div className="rounded-xl border border-black/10 bg-white p-5">
+            <h2 className="text-sm uppercase tracking-wide text-black/40 mb-4">
+              Trace
+            </h2>
+            <CampaignTimeline campaignId={c.id} />
+          </div>
         </TabsContent>
       </Tabs>
 
