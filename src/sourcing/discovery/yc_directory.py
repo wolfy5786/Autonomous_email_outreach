@@ -249,10 +249,11 @@ def _candidate_matches_filters(
 
     if filters.subindustries:
         want = _norm_set(filters.subindustries)
-        # Also match right-hand portion of "X -> Y" patterns (e.g. "B2B -> AI" → "ai")
-        # so that companies whose tags include "AI" are not falsely excluded.
+        # Strip "X -> Y" or "X → Y" prefix so a candidate tagged "AI" still
+        # matches a plan subindustry of "B2B → AI". The planning LLM emits the
+        # Unicode arrow U+2192, not the ASCII "->".
         want_parts: set[str] = {
-            w.split(" -> ", 1)[1] if " -> " in w else w for w in want
+            re.split(r"\s*(?:->|→)\s*", w, maxsplit=1)[-1] for w in want
         }
         cand_industry = _norm(raw.get("industry"))
         cand_sub = _norm(raw.get("subindustry"))

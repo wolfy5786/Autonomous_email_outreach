@@ -164,6 +164,117 @@ def test_regions_match_country_or_raw_regions() -> None:
     ) is False
 
 
+def test_subindustries_unicode_arrow_matches_right_side_in_tags() -> None:
+    # Real-world repro: planning LLM emits Unicode arrow "B2B → AI".
+    # The candidate's only AI signal is the tag "AI" — must still match.
+    f = YCDirectoryFilters(subindustries=["B2B → AI"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["AI", "SaaS"]), _raw(industry="B2B", subindustry=None), f
+        )
+        is True
+    )
+
+
+def test_subindustries_ascii_arrow_matches_right_side_in_tags() -> None:
+    # Legacy / human-typed form using ASCII "->".
+    f = YCDirectoryFilters(subindustries=["B2B -> Developer Tools"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["Developer Tools"]), _raw(industry="B2B", subindustry=None), f
+        )
+        is True
+    )
+
+
+def test_subindustries_mixed_arrow_styles_in_one_filter() -> None:
+    # A plan may contain both styles simultaneously; each entry independently
+    # contributes its right-hand side to the match set.
+    f = YCDirectoryFilters(subindustries=["B2B → AI", "B2B -> Developer Tools"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["Developer Tools"]), _raw(industry="B2B", subindustry=None), f
+        )
+        is True
+    )
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["AI"]), _raw(industry="B2B", subindustry=None), f
+        )
+        is True
+    )
+
+
+def test_subindustries_arrow_right_side_is_case_insensitive() -> None:
+    f = YCDirectoryFilters(subindustries=["B2B → AI"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["ai"]), _raw(industry="B2B", subindustry=None), f
+        )
+        is True
+    )
+
+
+def test_subindustries_arrow_with_collapsed_spaces() -> None:
+    # No surrounding whitespace around the arrow — regex tolerates it.
+    f_ascii = YCDirectoryFilters(subindustries=["B2B->AI"])
+    f_unicode = YCDirectoryFilters(subindustries=["B2B→AI"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["AI"]), _raw(industry="B2B", subindustry=None), f_ascii
+        )
+        is True
+    )
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["AI"]), _raw(industry="B2B", subindustry=None), f_unicode
+        )
+        is True
+    )
+
+
+def test_subindustries_arrow_left_side_alone_does_not_match() -> None:
+    # Filter "B2B → AI" must not match a candidate whose only signal is "B2B".
+    # Otherwise the right-side strip would degenerate into "match any B2B".
+    f = YCDirectoryFilters(subindustries=["B2B → AI"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["B2B"]), _raw(industry=None, subindustry=None), f
+        )
+        is False
+    )
+
+
+def test_subindustries_plain_token_still_matches_after_arrow_change() -> None:
+    # Regression guard: removing/refactoring the arrow split must not break
+    # the simple non-hierarchical case where filter == candidate signal.
+    f = YCDirectoryFilters(subindustries=["AI"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["AI"]), _raw(industry="B2B", subindustry=None), f
+        )
+        is True
+    )
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=[]), _raw(industry="B2B", subindustry="AI"), f
+        )
+        is True
+    )
+
+
+def test_subindustries_arrow_no_match_when_right_side_absent() -> None:
+    # Sanity-check the negative path: filter wants AI but candidate has neither
+    # an AI tag nor an AI sub/industry signal.
+    f = YCDirectoryFilters(subindustries=["B2B → AI"])
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["FinTech"]), _raw(industry="B2B", subindustry="Payments"), f
+        )
+        is False
+    )
+
+
 def test_is_hiring_best_effort_keeps_unknown() -> None:
     f = YCDirectoryFilters(is_hiring=True)
     # Field missing → keep
