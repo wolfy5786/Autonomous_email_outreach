@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import structlog
 import threading
 from contextlib import asynccontextmanager
 
@@ -11,7 +12,7 @@ from pika.exceptions import AMQPError
 from pymongo.errors import PyMongoError
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 
-from shared.observability import configure_logging
+from .logging_setup import configure_logging
 
 from .broker import BrokerConfig, RabbitBroker
 from .config import Settings
@@ -22,7 +23,7 @@ from .worker import ProspectingWorker
 
 # Replaces logging.basicConfig — structlog → JSON, stamps service/env on every line.
 configure_logging(service="prospecting")
-logger = logging.getLogger("prospecting")
+logger = structlog.get_logger("prospecting").bind(service="prospecting")
 
 
 MESSAGES_RECEIVED = Counter(
@@ -47,8 +48,7 @@ RETRYABLE_FAILURES = Counter(
 )
 
 
-def _structured_log(level: int, **fields: object) -> None:
-    logger.log(level, json.dumps(fields, sort_keys=True, separators=(",", ":")))
+# use structlog-bound logger for structured events
 
 
 class AppState:
@@ -66,7 +66,7 @@ class AppState:
         self.broker.connect()
 
         def _run() -> None:
-            logger.info("consuming queue=%s", "prospecting.requested")
+            logger.info("consuming", queue="prospecting.requested")
 
             self.broker.consume_forever(queue_name="prospecting.requested", handler=self.handle_prospecting_requested_message)
 
@@ -88,6 +88,32 @@ class AppState:
         except Exception:
             campaign_id = None
 
+        plan_id = None
+        try:
+            plan_id = msg.get("plan_id")
+        except Exception:
+            plan_id = None
+
+        entity_ids = []
+        try:
+            entity_ids = list(msg.get("entity_ids") or [])
+        except Exception:
+            entity_ids = []
+
+        # log message received (minimal payload info)
+        logger.info(
+            "message_received",
+            stage="message_received",
+            status="received",
+            campaign_id=campaign_id,
+            plan_id=plan_id,
+            event_id=event_id,
+            idempotency_key=msg.get("idempotency_key"),
+            trace_id=msg.get("trace_id"),
+            entity_count=len(entity_ids),
+            entity_ids_sample=entity_ids[:5],
+        )
+
         retry_count = 0
         if props is not None:
             try:
@@ -100,15 +126,15 @@ class AppState:
 
         if event_id and self.mongo.is_event_processed(event_id, campaign_id):
             DUPLICATE_SKIPPED.inc()
-            _structured_log(
-                logging.INFO,
-                service="prospecting",
+            logger.info(
+                "idempotency_check",
+                stage="idempotency_check",
+                status="duplicate_skipped",
                 campaign_id=campaign_id,
+                plan_id=plan_id,
                 event_id=event_id,
                 idempotency_key=msg.get("idempotency_key"),
                 trace_id=msg.get("trace_id"),
-                status="duplicate_skipped",
-                error_type=None,
                 retry_count=retry_count,
             )
             return
@@ -117,48 +143,85 @@ class AppState:
             out = self.worker.handle_prospecting_requested(msg)
         except PermanentProcessingError as exc:
             PERMANENT_FAILURES.inc()
-            _structured_log(
-                logging.ERROR,
-                service="prospecting",
+            logger.error(
+                "worker_completed",
+                stage="worker_completed",
+                status="failed",
                 campaign_id=campaign_id,
+                plan_id=plan_id,
                 event_id=event_id,
                 idempotency_key=msg.get("idempotency_key"),
                 trace_id=msg.get("trace_id"),
-                status="failed",
                 error_type=type(exc).__name__,
+                error_message=str(exc),
                 retry_count=retry_count,
             )
             raise
         except PyMongoError as exc:
             RETRYABLE_FAILURES.inc()
-            _structured_log(
-                logging.ERROR,
-                service="prospecting",
+            logger.error(
+                "worker_completed",
+                stage="worker_completed",
+                status="retrying",
                 campaign_id=campaign_id,
+                plan_id=plan_id,
                 event_id=event_id,
                 idempotency_key=msg.get("idempotency_key"),
                 trace_id=msg.get("trace_id"),
-                status="retrying",
                 error_type=type(exc).__name__,
+                error_message=str(exc),
                 retry_count=retry_count,
             )
             raise RetryableProcessingError(str(exc)) from exc
 
         # publish only after DB writes inside the worker have completed
         try:
-            self.broker.publish("prospecting.completed", out)
-            COMPLETED_PUBLISHED.inc()
-        except AMQPError as exc:
-            RETRYABLE_FAILURES.inc()
-            _structured_log(
-                logging.ERROR,
-                service="prospecting",
+            # worker success — include ranked_count
+            ranked_count = 0
+            try:
+                ranked_count = len(out.get("ranked_prospects") or [])
+            except Exception:
+                ranked_count = 0
+
+            logger.info(
+                "worker_completed",
+                stage="worker_completed",
+                status="success",
                 campaign_id=campaign_id,
+                plan_id=plan_id,
                 event_id=event_id,
                 idempotency_key=msg.get("idempotency_key"),
                 trace_id=msg.get("trace_id"),
+                ranked_count=ranked_count,
+            )
+
+            self.broker.publish("prospecting.completed", out)
+            COMPLETED_PUBLISHED.inc()
+
+            logger.info(
+                "publish_completed",
+                stage="publish_completed",
+                status="published",
+                campaign_id=campaign_id,
+                plan_id=plan_id,
+                event_id=event_id,
+                idempotency_key=msg.get("idempotency_key"),
+                trace_id=msg.get("trace_id"),
+                ranked_count=ranked_count,
+            )
+        except AMQPError as exc:
+            RETRYABLE_FAILURES.inc()
+            logger.error(
+                "publish_completed",
+                stage="publish_completed",
                 status="retrying",
+                campaign_id=campaign_id,
+                plan_id=plan_id,
+                event_id=event_id,
+                idempotency_key=msg.get("idempotency_key"),
+                trace_id=msg.get("trace_id"),
                 error_type=type(exc).__name__,
+                error_message=str(exc),
                 retry_count=retry_count,
             )
             raise RetryableProcessingError(str(exc)) from exc
@@ -167,19 +230,33 @@ class AppState:
         if event_id:
             try:
                 self.mongo.mark_event_processed(event_id, campaign_id, payload=out)
-            except Exception:
-                _structured_log(
-                    logging.ERROR,
-                    service="prospecting",
+            except Exception as exc:
+                logger.error(
+                    "idempotency_mark",
+                    stage="idempotency_mark",
+                    status="failed",
                     campaign_id=campaign_id,
+                    plan_id=plan_id,
                     event_id=event_id,
                     idempotency_key=msg.get("idempotency_key"),
                     trace_id=msg.get("trace_id"),
-                    status="failed",
                     error_type="mark_event_processed_failed",
+                    error_message=str(exc),
                     retry_count=retry_count,
                 )
                 raise
+            else:
+                logger.info(
+                    "idempotency_mark",
+                    stage="idempotency_mark",
+                    status="persisted",
+                    campaign_id=campaign_id,
+                    plan_id=plan_id,
+                    event_id=event_id,
+                    idempotency_key=msg.get("idempotency_key"),
+                    trace_id=msg.get("trace_id"),
+                    retry_count=retry_count,
+                )
 
     def stop(self) -> None:
         try:
@@ -218,7 +295,14 @@ def metrics():
 
 def main() -> None:
     settings = Settings()
-    uvicorn.run("app.main:app", host=settings.http_host, port=settings.http_port, reload=False, log_level="info")
+    uvicorn.run(
+        "app.main:app",
+        host=settings.http_host,
+        port=settings.http_port,
+        reload=False,
+        log_level="info",
+        access_log=False,
+    )
 
 
 if __name__ == "__main__":

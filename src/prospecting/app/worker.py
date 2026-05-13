@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import structlog
+from pydantic import ValidationError
+
 from .contracts import (
     CampaignDocument,
     CompanyDocument,
@@ -18,8 +21,7 @@ from .errors import PermanentProcessingError, RetryableProcessingError
 from .db import Mongo
 from .scoring import combined_score, score_company, score_person
 
-
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("prospecting.worker").bind(service="prospecting")
 
 
 @dataclass(frozen=True)
@@ -39,44 +41,135 @@ class ProspectingWorker:
         Input: { campaign_id, plan_id, entity_ids[] }
         Output: { campaign_id, ranked_prospects[] }
         """
-        event = ProspectingRequestedEvent.model_validate(msg)
+        # validate incoming request
+        try:
+            event = ProspectingRequestedEvent.model_validate(msg)
+        except ValidationError as exc:
+            raise PermanentProcessingError(f"request validation failed: {exc}") from exc
+
         campaign_id = event.campaign_id
+        plan_id = event.plan_id
         company_ids = [str(x) for x in event.entity_ids if x is not None]
 
+        logger.info(
+            "request_validated",
+            stage="request_validated",
+            campaign_id=campaign_id,
+            plan_id=plan_id,
+            event_id=getattr(event, "event_id", None) or msg.get("event_id"),
+            idempotency_key=msg.get("idempotency_key"),
+            trace_id=msg.get("trace_id"),
+            entity_count=len(company_ids),
+            entity_ids_sample=company_ids[:5],
+        )
+
+        # campaign lookup
         campaign_doc = self._mongo.get_campaign(campaign_id)
-        campaign = CampaignDocument.model_validate(campaign_doc).model_dump(mode="python") if campaign_doc else None
+        campaign = None
+        if campaign_doc:
+            try:
+                campaign = CampaignDocument.model_validate(campaign_doc).model_dump(mode="python")
+            except ValidationError as exc:
+                cid = str(campaign_doc.get("id") or campaign_doc.get("_id") or campaign_doc.get("campaign_id"))
+                raise PermanentProcessingError(f"campaign document validation failed for id={cid}: {exc}") from exc
+
+        logger.info(
+            "campaign_lookup",
+            stage="campaign_lookup",
+            status=("found" if campaign else "missing"),
+            campaign_id=campaign_id,
+            campaign_status=(campaign.get("status") if campaign else None),
+            campaign_plan_id=(campaign.get("plan_id") if campaign else None),
+        )
+
         if not campaign:
             raise PermanentProcessingError(f"campaign not found for campaign_id={campaign_id}")
 
+        # plan lookup
         plan_doc = self._mongo.get_plan(campaign_id=campaign_id)
-        plan = PlanDocument.model_validate(plan_doc).model_dump(mode="python") if plan_doc else None
+        plan = None
+        if plan_doc:
+            try:
+                plan = PlanDocument.model_validate(plan_doc).model_dump(mode="python")
+            except ValidationError as exc:
+                pid = str(plan_doc.get("id") or plan_doc.get("_id") or "")
+                raise PermanentProcessingError(f"plan document validation failed for id={pid}: {exc}") from exc
+
+        logger.info(
+            "plan_lookup",
+            stage="plan_lookup",
+            status=("found" if plan else "missing"),
+            campaign_id=campaign_id,
+            plan_id=(plan.get("id") if plan else None),
+        )
+
         if not plan:
             if campaign and str(campaign.get("status") or "").lower() in {"draft", "creating", "pending", "initializing"}:
                 raise RetryableProcessingError(f"plan not ready for campaign_id={campaign_id}")
             raise PermanentProcessingError(f"plan not found for campaign_id={campaign_id}")
 
+        # determine min score
         min_score = self._default_min
         try:
             cfg = (campaign or {}).get("config") or {}
             if "min_icp_score" in cfg:
                 min_score = float(cfg["min_icp_score"])
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError):
             logger.warning(
-                "invalid min_icp_score on campaign_id=%s; falling back to default",
-                campaign_id,
-                exc_info=exc,
+                "invalid_min_icp_score",
+                stage="invalid_min_icp_score",
+                campaign_id=campaign_id,
             )
 
+        # load companies
         company_docs = self._mongo.get_companies(company_ids)
-        companies = [CompanyDocument.model_validate(doc).model_dump(mode="python") for doc in company_docs]
+        companies: list[dict[str, Any]] = []
+        company_validation_errors = 0
+        for doc in company_docs:
+            try:
+                companies.append(CompanyDocument.model_validate(doc).model_dump(mode="python"))
+            except ValidationError:
+                company_validation_errors += 1
+
+        logger.info(
+            "companies_loaded",
+            stage="companies_loaded",
+            campaign_id=campaign_id,
+            requested_count=len(company_ids),
+            found_count=len(company_docs),
+            missing_count=max(0, len(company_ids) - len(company_docs)),
+            company_validation_errors=company_validation_errors,
+        )
+
         if not companies:
-            logger.info("no companies found for campaign_id=%s ids=%s", campaign_id, company_ids[:5])
+            logger.info(
+                "ranking_completed",
+                stage="ranking_completed",
+                status="success",
+                campaign_id=campaign_id,
+                ranked_count=0,
+                outcome_reason="no_companies_found",
+            )
             return {"campaign_id": campaign_id, "ranked_prospects": []}
 
-        persons = [
-            PersonDocument.model_validate(doc).model_dump(mode="python")
-            for doc in self._mongo.get_persons_for_companies([str(c.get("id") or c.get("_id")) for c in companies])
-        ]
+        # load persons
+        person_docs = self._mongo.get_persons_for_companies([str(c.get("id") or c.get("_id")) for c in companies])
+        persons: list[dict[str, Any]] = []
+        person_validation_errors = 0
+        for doc in person_docs:
+            try:
+                persons.append(PersonDocument.model_validate(doc).model_dump(mode="python"))
+            except ValidationError:
+                person_validation_errors += 1
+
+        logger.info(
+            "persons_loaded",
+            stage="persons_loaded",
+            campaign_id=campaign_id,
+            person_count=len(persons),
+            person_validation_errors=person_validation_errors,
+        )
+
         persons_by_company: dict[str, list[dict[str, Any]]] = {}
         for p in persons:
             cid = p.get("company_id")
@@ -93,6 +186,8 @@ class ProspectingWorker:
             event_id = getattr(event, "event_id", None) or msg.get("event_id")
         except Exception:
             event_id = None
+
+        filtered_count = 0
 
         for c in companies:
             cid = str(c.get("id") or c.get("_id") or "")
@@ -134,6 +229,16 @@ class ProspectingWorker:
                     self._mongo.update_person_email_verified(pid, True)
 
                 if total < min_score:
+                    filtered_count += 1
+                    logger.debug(
+                        "prospect_filtered",
+                        stage="prospect_filtered",
+                        campaign_id=campaign_id,
+                        company_id=cid,
+                        poc_id=pid,
+                        total_score=round(total, 6),
+                        min_icp_score=min_score,
+                    )
                     continue
 
                 # extract tie-breaker values
@@ -169,6 +274,15 @@ class ProspectingWorker:
                         "person_reasons": {k: v.reason for k, v in p_score.dimension_scores.items()},
                     }
                 )
+
+        # report filtering summary
+        logger.info(
+            "prospect_filtered",
+            stage="prospect_filtered",
+            campaign_id=campaign_id,
+            filtered_count=filtered_count,
+            min_icp_score=min_score,
+        )
 
         # sort using the requested tie-breakers
         prospects.sort(
@@ -221,5 +335,22 @@ class ProspectingWorker:
             ranked_prospects=ranked,
         )
         # return a python dict so callers (and publisher) can work with structured data
-        return output.model_dump(mode="python", exclude_none=True)
+        ranked_count = len(ranked)
+        outcome_reason = None
+        if ranked_count == 0:
+            if not companies:
+                outcome_reason = "no_companies_found"
+            elif not persons:
+                outcome_reason = "no_persons_found"
+            else:
+                outcome_reason = "all_filtered_by_min_icp_score"
+        logger.info(
+            "ranking_completed",
+            stage="ranking_completed",
+            status="success",
+            campaign_id=campaign_id,
+            ranked_count=ranked_count,
+            outcome_reason=outcome_reason,
+        )
 
+        return output.model_dump(mode="python", exclude_none=True)
