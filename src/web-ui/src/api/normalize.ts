@@ -194,7 +194,7 @@ export function defaultOrchestratorConfig(): OrchestratorCampaignCreatePayload["
       credentials_ref:
         import.meta.env.VITE_EMAIL_CREDENTIALS_REF ?? "dev-local-credentials",
     },
-    min_icp_score: Number(import.meta.env.VITE_MIN_ICP_SCORE ?? 0.5),
+    min_icp_score: Number(import.meta.env.VITE_MIN_ICP_SCORE ?? 0),
     freshness_days: Number(import.meta.env.VITE_FRESHNESS_DAYS ?? 14),
     max_drafts: Number(import.meta.env.VITE_MAX_DRAFTS ?? 50),
   };
