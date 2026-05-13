@@ -15,3 +15,4 @@ Break large features into steps; chain sessions rather than one giant prompt<!--
 <!-- week2: architecture docs -->
 <!-- week3: reply webhook -->
 <!-- week3: webhook timeout -->
+<!-- week3: deps bump -->
