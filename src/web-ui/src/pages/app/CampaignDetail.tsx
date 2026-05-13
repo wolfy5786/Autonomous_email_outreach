@@ -53,12 +53,12 @@ export default function CampaignDetail() {
     enabled: !!id,
   });
 
-<<<<<<< Updated upstream
   const prospectsQuery = useQuery({
     queryKey: ["campaign-prospects", id],
     queryFn: () => endpoints.listCampaignProspects(id!),
     enabled: !!id,
-=======
+  });
+
   const rerun = useMutation({
     mutationFn: () => endpoints.rerunCampaign(id!),
     onSuccess: () => {
@@ -73,7 +73,6 @@ export default function CampaignDetail() {
       qc.invalidateQueries({ queryKey: ["campaigns"] });
       navigate("/app/campaigns");
     },
->>>>>>> Stashed changes
   });
 
   if (campaignQuery.isLoading) {
