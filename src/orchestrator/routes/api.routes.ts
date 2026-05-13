@@ -79,12 +79,46 @@ export function createApiRouter(statusRepo: CampaignStatusRepository): Router {
     }
   });
 
-  // GET /api/drafts/:id — One draft record
+  // GET /api/drafts/:id — One draft record, joined with recipient (POC + company)
+  // so the UI can render a Gmail-style "From / To / Subject" header without
+  // separate roundtrips to persons/companies.
   router.get('/drafts/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const draft = await EmailDraft.findOne({ draft_id: String(req.params.id) }).select('-__v');
+      // Python messaging writes drafts with id = uuid (and _id = same uuid).
+      // Mongoose can't query _id with a UUID (would try to cast to ObjectId),
+      // so use the `id` field; fall back to `draft_id` for any future writers.
+      const draftId = String(req.params.id);
+      const draft = await EmailDraft.findOne({
+        $or: [{ id: draftId }, { draft_id: draftId }],
+      })
+        .select('-__v')
+        .lean();
       if (!draft) throw new AppError(404, 'Draft not found');
-      res.json(draft);
+
+      // Raw collection access — persons + companies are owned by other services
+      // (Beanie/Python) and not modeled in Mongoose here.
+      const db = EmailDraft.db.db;
+      const [poc, company] = db
+        ? await Promise.all([
+            db.collection('persons').findOne({ _id: draft.poc_id as unknown as never }),
+            db.collection('companies').findOne({ _id: draft.company_id as unknown as never }),
+          ])
+        : [null, null];
+
+      const pocName =
+        (poc?.name as string | undefined) ??
+        ([poc?.first_name, poc?.last_name].filter(Boolean).join(' ').trim() || null);
+
+      res.json({
+        ...draft,
+        recipient: {
+          name: pocName,
+          email: (poc?.email as string | null) ?? null,
+          company: (company?.name as string | null) ?? null,
+          company_domain: (company?.domain as string | null) ?? null,
+          linkedin_url: (poc?.linkedin_url as string | null) ?? null,
+        },
+      });
     } catch (err) {
       next(err);
     }

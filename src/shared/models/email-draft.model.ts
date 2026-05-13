@@ -41,4 +41,4 @@ const EmailDraftSchema = new Schema({
 // Compound index for review queue queries
 EmailDraftSchema.index({ campaign_id: 1, status: 1 });
 
-export const EmailDraft = mongoose.model<IEmailDraft>('EmailDraft', EmailDraftSchema);
+export const EmailDraft = mongoose.model<IEmailDraft>('EmailDraft', EmailDraftSchema, 'email_drafts');
