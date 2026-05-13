@@ -249,6 +249,11 @@ def _candidate_matches_filters(
 
     if filters.subindustries:
         want = _norm_set(filters.subindustries)
+        # Also match right-hand portion of "X -> Y" patterns (e.g. "B2B -> AI" → "ai")
+        # so that companies whose tags include "AI" are not falsely excluded.
+        want_parts: set[str] = {
+            w.split(" -> ", 1)[1] if " -> " in w else w for w in want
+        }
         cand_industry = _norm(raw.get("industry"))
         cand_sub = _norm(raw.get("subindustry"))
         cand_tags = {n for n in (_norm(t) for t in (candidate.get("tags") or [])) if n}
@@ -256,6 +261,7 @@ def _candidate_matches_filters(
             (cand_sub is not None and cand_sub in want)
             or (cand_industry is not None and cand_industry in want)
             or bool(cand_tags & want)
+            or bool(cand_tags & want_parts)
         ):
             return False
 
