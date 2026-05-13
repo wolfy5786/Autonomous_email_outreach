@@ -40,7 +40,8 @@ class ProspectingCompletedEvent(ProspectingEventBase):
 
 
 class CampaignDocument(ProspectingDocumentBase):
-    id: str = Field(validation_alias=AliasChoices("id", "_id"))
+    campaign_id: str = Field(min_length=1)
+    id: str | None = None
     name: str | None = None
     status: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)

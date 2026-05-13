@@ -58,7 +58,14 @@ class Mongo:
         campaign = self.get_campaign(campaign_id)
         campaign_plan_id = campaign.get("plan_id") if campaign else None
         if campaign_plan_id:
-            return self.plans.find_one({"id": campaign_plan_id}) or self.plans.find_one({"_id": campaign_plan_id})
+            return self.plans.find_one(
+                {
+                    "$or": [
+                        {"id": campaign_plan_id},
+                        {"_id": campaign_plan_id},
+                    ]
+                }
+            )
         return self.plans.find_one({"campaign_id": campaign_id})
 
     def is_event_processed(self, event_id: str, campaign_id: str | None = None) -> bool:
@@ -83,7 +90,15 @@ class Mongo:
         self.processed_events.update_one({"_id": event_id}, {"$set": doc}, upsert=True)
 
     def get_campaign(self, campaign_id: str) -> dict[str, Any] | None:
-        return self.campaigns.find_one({"id": campaign_id}) or self.campaigns.find_one({"_id": campaign_id})
+        return self.campaigns.find_one(
+            {
+                "$or": [
+                    {"campaign_id": campaign_id},
+                    {"id": campaign_id},
+                    {"_id": campaign_id},
+                ]
+            }
+        )
 
     def get_companies(self, company_ids: Iterable[str]) -> list[dict[str, Any]]:
         ids = list(company_ids)
