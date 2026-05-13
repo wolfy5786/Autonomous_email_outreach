@@ -249,8 +249,14 @@ def _candidate_matches_filters(
 
     if filters.subindustries:
         want = _norm_set(filters.subindustries)
+        cand_industry = _norm(raw.get("industry"))
         cand_sub = _norm(raw.get("subindustry"))
-        if cand_sub is None or cand_sub not in want:
+        cand_tags = {n for n in (_norm(t) for t in (candidate.get("tags") or [])) if n}
+        if not (
+            (cand_sub is not None and cand_sub in want)
+            or (cand_industry is not None and cand_industry in want)
+            or bool(cand_tags & want)
+        ):
             return False
 
     if filters.tags:

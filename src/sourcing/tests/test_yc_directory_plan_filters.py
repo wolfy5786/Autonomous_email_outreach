@@ -115,6 +115,30 @@ def test_subindustries_case_insensitive() -> None:
     assert _candidate_matches_filters(_cand(), _raw(subindustry="Sales"), f) is False
 
 
+def test_subindustries_falls_back_to_industry_and_tags() -> None:
+    # YC raw.subindustry is null/absent for most companies — the subindustries
+    # filter should still match via industry or tags so planner outputs like
+    # subindustries=["SaaS"] don't drop everything.
+    f = YCDirectoryFilters(subindustries=["SaaS"])
+    # Match via candidate tags
+    assert (
+        _candidate_matches_filters(_cand(tags=["SaaS", "Other"]), _raw(subindustry=None), f)
+        is True
+    )
+    # Match via raw["industry"]
+    assert (
+        _candidate_matches_filters(_cand(tags=[]), _raw(industry="SaaS", subindustry=None), f)
+        is True
+    )
+    # No match — neither subindustry, industry, nor tags overlap
+    assert (
+        _candidate_matches_filters(
+            _cand(tags=["Other"]), _raw(industry="B2B", subindustry=None), f
+        )
+        is False
+    )
+
+
 def test_tags_intersection_case_insensitive() -> None:
     f = YCDirectoryFilters(tags=["SaaS"])
     assert _candidate_matches_filters(_cand(tags=["saas", "Other"]), _raw(), f) is True
