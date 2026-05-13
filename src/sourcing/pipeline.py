@@ -625,6 +625,72 @@ class SourcingPipeline:
                 e,
                 exc_info=True,
             )
+            return
+
+        try:
+            await self._upsert_person_from_extra(company)
+        except Exception as e:
+            logger.warning(
+                "stage=person_skeleton_persist_failed campaign_id=%s company_id=%s error=%s",
+                job.campaign_id,
+                company.id,
+                e,
+                exc_info=True,
+            )
+
+    async def _upsert_person_from_extra(self, company: CompanyRecord) -> None:
+        """Upsert a Person skeleton when linkedin_poc enrichment populated company.extra.poc_name.
+
+        Downstream services (prospecting, messaging) look up POCs by ``company_id`` against
+        the ``persons`` collection. Sourcing's linkedin_poc op only writes the POC name and
+        profile URL into ``company.extra`` — without a Person doc, prospecting reports
+        ``no_persons_found`` and the pipeline produces 0 drafts.
+
+        The synthesized email lets the stub provider produce a draft end-to-end; real
+        Apollo/Hunter email acquisition still belongs to prospecting per design.
+        """
+        poc_name = company.extra.get("poc_name")
+        if not poc_name:
+            return
+
+        poc_id = f"{company.id}-poc-linkedin"
+        first_raw, _, last_raw = str(poc_name).partition(" ")
+        first = first_raw.strip() or None
+        last = last_raw.strip() or None
+
+        email: str | None = None
+        if first and last and company.domain:
+            local = f"{first}.{last}".lower().replace(" ", "")
+            email = f"{local}@{company.domain}"
+
+        linkedin_url = company.extra.get("poc_profile_url")
+
+        doc = {
+            "_id": poc_id,
+            "id": poc_id,
+            "company_id": company.id,
+            "name": poc_name,
+            "first_name": first,
+            "last_name": last,
+            "title": None,
+            "seniority": None,
+            "department": None,
+            "email": email,
+            "email_verified": False,
+            "linkedin_url": linkedin_url,
+            "icp_poc_score": None,
+            "freshness_timestamp": datetime.now(timezone.utc).isoformat(),
+            "extra": {"source": "sourcing.linkedin_poc"},
+        }
+
+        persons = CompanyRecord.get_motor_collection().database["persons"]
+        await persons.update_one({"_id": poc_id}, {"$set": doc}, upsert=True)
+        logger.info(
+            "stage=person_skeleton_upserted company_id=%s poc_id=%s has_email=%s",
+            company.id,
+            poc_id,
+            email is not None,
+        )
 
 
 _EXTRA_KEYS_FROM_CANDIDATE: tuple[str, ...] = (
