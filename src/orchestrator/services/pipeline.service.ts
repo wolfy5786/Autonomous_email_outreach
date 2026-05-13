@@ -174,14 +174,14 @@ export class PipelineService {
     if (!campaign || skipPipelineHandlers(campaign.status)) return;
 
     const qualified = ranked_prospects.filter(
-      (p) => p.score >= campaign.config.min_icp_score
+      (p) => p.total_score >= campaign.config.min_icp_score
     );
     const qualifiedIds = qualified.map((p) => p.poc_id);
 
     campaign.pipeline_state.ranked_prospect_ids = qualifiedIds;
     const scores: Record<string, number> =
       campaign.pipeline_state.ranked_prospect_scores ?? {};
-    for (const p of qualified) scores[p.poc_id] = p.score;
+    for (const p of qualified) scores[p.poc_id] = p.total_score;
     campaign.pipeline_state.ranked_prospect_scores = scores;
 
     const cap = Math.floor(campaign.config.max_drafts);

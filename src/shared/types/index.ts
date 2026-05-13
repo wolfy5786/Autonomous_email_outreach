@@ -129,7 +129,12 @@ export interface SourcingPartialPayload {
 
 export interface ProspectingCompletedPayload {
   campaign_id: string;
-  ranked_prospects: Array<{ poc_id: string; score: number }>;
+  ranked_prospects: Array<{
+    poc_id: string;
+    total_score: number;
+    icp_fit_score: number;
+    icp_poc_score: number;
+  }>;
 }
 
 export interface MessagingRequestedPayload {
