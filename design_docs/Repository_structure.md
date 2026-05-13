@@ -77,3 +77,20 @@ Local dev runs **RabbitMQ** in Docker (`rabbit_mq/`). Production uses **RabbitMQ
 
 **Helm charts** (`deploy/`)
 One chart per service with `deployment.yaml`, `service.yaml`, `serviceaccount.yaml`, `hpa.yaml`/`scaledobject.yaml`, `externalsecret.yaml`, and `servicemonitor.yaml`. The `umbrella/` chart deploys all services in a single `helm upgrade` for dev.
+
+## Orchestrator Service (`src/orchestrator/`)
+
+```
+src/orchestrator/
+├── config/          # Environment configuration
+├── middleware/       # Express middleware (logging, metrics, errors)
+├── postgres/        # PostgreSQL repositories (campaigns, status, audit)
+├── rabbit/          # RabbitMQ broker, publishers, subscribers, handlers
+├── routes/          # Express route handlers
+├── services/        # Business logic (pipeline, validation, stats)
+├── types/           # TypeScript type definitions
+├── app.ts           # Express app factory
+├── main.ts          # Entry point
+├── Dockerfile       # Multi-stage Docker build
+└── package.json     # Dependencies
+```
