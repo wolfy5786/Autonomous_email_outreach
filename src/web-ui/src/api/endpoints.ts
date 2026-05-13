@@ -79,4 +79,21 @@ export const endpoints = {
   // Landing
   requestEarlyAccess: (body: EarlyAccessRequest) =>
     api.post<{ ok: true }>("/api/early-access", body),
+
+  // Service status — orchestrator-side campaign counts (powers the Overview page).
+  getStatus: () =>
+    api.get<{
+      service: string;
+      uptime_seconds: number;
+      campaigns: {
+        active_pipeline: number;
+        in_messaging: number;
+        completed: number;
+        paused: number;
+        cancelled: number;
+        failed: number;
+        by_status: Record<string, number>;
+      };
+      timestamp: string;
+    }>("/api/status"),
 };

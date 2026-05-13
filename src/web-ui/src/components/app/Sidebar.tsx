@@ -40,9 +40,6 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-      <div className="px-6 py-4 text-xs text-black/40 border-t border-black/5">
-        Mock data — backend not wired
-      </div>
     </aside>
   );
 }
