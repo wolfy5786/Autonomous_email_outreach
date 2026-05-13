@@ -71,7 +71,7 @@ def publish_prospecting_requested_event(event_payload: dict | None = None) -> Tu
 
 
 def duplicate_event_idempotency_test() -> Tuple[bool, str]:
-    """Publish the same prospecting request twice and ensure only one prospecting.completed message is emitted."""
+    """Publish the same request twice, verify one output, and validate persisted payload content."""
     try:
         url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
         exchange = os.getenv("RABBITMQ_EXCHANGE", "email_outreach.events")
@@ -154,11 +154,28 @@ def duplicate_event_idempotency_test() -> Tuple[bool, str]:
             if len(received) > 1:
                 break
 
+        event_doc = db.prospecting_events.find_one({"_id": event_payload["event_id"]}) or {}
+        persisted_payload = event_doc.get("payload")
+        if not isinstance(persisted_payload, dict):
+            connection.close()
+            client.close()
+            return False, "processed event payload was not persisted for duplicate-event idempotency check"
+        if persisted_payload.get("campaign_id") != event_payload["campaign_id"]:
+            connection.close()
+            client.close()
+            return False, "persisted payload campaign_id does not match the processed event"
+        if not isinstance(persisted_payload.get("ranked_prospects"), list):
+            connection.close()
+            client.close()
+            return False, "persisted payload does not include ranked_prospects list"
+
         connection.close()
         client.close()
 
         if len(received) == 1:
-            return True, "Duplicate prospecting.requested event produced exactly one prospecting.completed output"
+            if received[0] != persisted_payload:
+                return False, "published payload does not match the idempotency-tracked persisted payload"
+            return True, "Duplicate event produced one output and persisted deterministic payload"
         if len(received) > 1:
             return False, f"Duplicate prospecting.requested event produced {len(received)} prospecting.completed outputs"
         return False, "Did not receive any prospecting.completed output for duplicate-event test"

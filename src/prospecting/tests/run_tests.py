@@ -14,6 +14,7 @@ TESTS: list[tuple[str, str]] = [
     ("Integration Tests", "test_integration.py"),
     ("Message Queue Flow Tests", "test_message_flow.py"),
     ("API Endpoint Tests", "test_api.py"),
+    ("E2E Scoring Evaluation", "test_e2e_scoring_evaluation.py"),
 ]
 
 

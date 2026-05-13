@@ -9,6 +9,8 @@ from typing import Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import app.scoring as scoring_mod  # noqa: E402
+import app.worker as worker_mod  # noqa: E402
 from app.worker import ProspectingWorker  # noqa: E402
 from app.scoring import ScoringResult, DimensionScore  # noqa: E402
 
@@ -55,62 +57,72 @@ def _make_dim(score: float, reason: str = "r") -> DimensionScore:
 
 
 def test_tiebreaker_ordering() -> Tuple[bool, str]:
-    """Create prospects with equal total scores but varying tie-breaker fields and assert deterministic ordering."""
+    """Create prospects with equal total scores and assert full tie-break ordering."""
     try:
-        # prepare three companies with identical scoring values but different data_completeness and freshness
+        # All prospects will share the same total score, then rank by:
+        # 1) company_data_completeness desc
+        # 2) person_email_verified desc
+        # 3) freshness_timestamp desc
         companies = [
             {"id": "company-a", "freshness_timestamp": 100, "extra": {}},
-            {"id": "company-b", "freshness_timestamp": 50, "extra": {}},
-            {"id": "company-c", "freshness_timestamp": 75, "extra": {}},
+            {"id": "company-b", "freshness_timestamp": 90, "extra": {}},
+            {"id": "company-c", "freshness_timestamp": 80, "extra": {}},
+            {"id": "company-d", "freshness_timestamp": 70, "extra": {}},
         ]
 
-        # persons mapped to companies; vary email_verified to hit that tie-breaker
         persons = [
             {"id": "person-1", "company_id": "company-a", "email_verified": False},
             {"id": "person-2", "company_id": "company-b", "email_verified": True},
             {"id": "person-3", "company_id": "company-c", "email_verified": True},
+            {"id": "person-4", "company_id": "company-d", "email_verified": False},
         ]
 
         fake_mongo = FakeMongo(companies=companies, persons=persons, plan={"scoring_weights": {}})
 
         worker = ProspectingWorker(mongo=fake_mongo, default_min_icp_score=0.0)
 
-        # monkeypatch scoring functions to return identical overall scores but expose per-dimension differences
-        import app.scoring as scoring_mod  # noqa: E402
-
-        orig_score_company = scoring_mod.score_company
-        orig_score_person = scoring_mod.score_person
+        orig_score_company = worker_mod.score_company
+        orig_score_person = worker_mod.score_person
 
         try:
-            # Companies: same overall score but different data_completeness dimension
+            company_data_completeness = {
+                "company-a": 0.9,
+                "company-b": 0.8,
+                "company-c": 0.8,
+                "company-d": 0.7,
+            }
+
             def fake_score_company(company, plan):
-                dc = 0.6 if company.get("id") == "company-a" else (0.6 if company.get("id") == "company-b" else 0.6)
                 dims = {k: _make_dim(0.0) for k in scoring_mod.COMPANY_DIMENSIONS}
-                dims["data_completeness"] = _make_dim(0.6 if company.get("id") == "company-a" else (0.5 if company.get("id") == "company-b" else 0.5))
-                # freshness not used for score here; keep equal
+                dims["data_completeness"] = _make_dim(company_data_completeness[company.get("id", "")])
                 return ScoringResult(score=0.7, dimension_scores=dims, scoring_version=scoring_mod.SCORING_VERSION)
 
-            # Persons: same overall score but email_verified dimension varies
             def fake_score_person(person, plan):
                 dims = {k: _make_dim(0.0) for k in scoring_mod.POC_DIMENSIONS}
                 dims["email_verified"] = _make_dim(1.0 if person.get("email_verified") else 0.0)
                 return ScoringResult(score=0.7, dimension_scores=dims, scoring_version=scoring_mod.SCORING_VERSION)
 
-            scoring_mod.score_company = fake_score_company
-            scoring_mod.score_person = fake_score_person
+            worker_mod.score_company = fake_score_company
+            worker_mod.score_person = fake_score_person
 
-            msg = {"campaign_id": "test-campaign", "entity_ids": [c["id"] for c in companies]}
+            msg = {"campaign_id": "test-campaign", "plan_id": "plan-1", "entity_ids": [c["id"] for c in companies]}
             payload = worker.handle_prospecting_requested(msg)
 
             ranked = payload.get("ranked_prospects", [])
-            # Expect person-2 (email_verified True) to appear before person-1 (False)
             ids = [r.get("poc_id") for r in ranked]
-            if "person-2" not in ids or "person-1" not in ids:
-                return _fail("expected person ids missing from ranked prospects")
+            expected = ["person-1", "person-2", "person-3", "person-4"]
+            if ids != expected:
+                return _fail(f"unexpected tie-break order: expected {expected}, got {ids}")
 
-            # person-2 should rank before person-1 because email_verified True > False
-            if ids.index("person-2") >= ids.index("person-1"):
-                return _fail("email_verified tie-breaker did not order prospects correctly")
+            # Verify each tie-breaker condition explicitly.
+            if ids.index("person-1") >= ids.index("person-2"):
+                return _fail("data_completeness tie-breaker did not place person-1 first")
+
+            if ids.index("person-2") >= ids.index("person-3"):
+                return _fail("freshness tie-breaker did not place person-2 ahead of person-3")
+
+            if ids.index("person-3") >= ids.index("person-4"):
+                return _fail("data_completeness tie-breaker did not place person-3 ahead of person-4")
 
             # Stability: repeated runs produce same ordering
             payload2 = worker.handle_prospecting_requested(msg)
@@ -120,8 +132,8 @@ def test_tiebreaker_ordering() -> Tuple[bool, str]:
 
             return _ok("Tie-breaker ordering is deterministic and stable")
         finally:
-            scoring_mod.score_company = orig_score_company
-            scoring_mod.score_person = orig_score_person
+            worker_mod.score_company = orig_score_company
+            worker_mod.score_person = orig_score_person
 
     except Exception as exc:
         return _fail(f"tie-breaker test failed: {exc}")

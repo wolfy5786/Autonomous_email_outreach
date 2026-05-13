@@ -91,6 +91,13 @@ Run the functional test suite in Docker:
 docker compose run --rm tests
 ```
 
+If you are at `src/` (repository-level service directory), run the same suite with an explicit compose file:
+
+```bash
+cd src
+docker compose -f prospecting/docker-compose.yml run --build --rm tests
+```
+
 Stop everything:
 
 ```bash

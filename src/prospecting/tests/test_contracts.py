@@ -145,13 +145,25 @@ def test_output_contract() -> Tuple[bool, str]:
                         icp_poc_score=0.6,
                         total_score=0.705,
                         scoring_version="v1",
-                        scoring_reasons={},
+                        scoring_reasons={"company": {"industry_match": "reason"}, "poc": {"title_match": "reason"}},
                     ),
                 ],
             }
         )
         if len(payload.ranked_prospects) != 2:
             return _fail("ranked prospects were not validated correctly")
+        for ranked in payload.ranked_prospects:
+            if "company" not in ranked.scoring_reasons or "poc" not in ranked.scoring_reasons:
+                return _fail("scoring_reasons must include both company and poc sections")
+            for section in ("company", "poc"):
+                section_reasons = ranked.scoring_reasons.get(section) or {}
+                if not isinstance(section_reasons, dict):
+                    return _fail(f"scoring_reasons[{section}] must be an object")
+                for dimension, reason in section_reasons.items():
+                    if not isinstance(dimension, str) or not dimension.strip():
+                        return _fail(f"scoring_reasons[{section}] contains an invalid dimension key: {dimension!r}")
+                    if not isinstance(reason, str) or not reason.strip():
+                        return _fail(f"scoring_reasons[{section}][{dimension}] must be a non-empty string")
         return _ok("Prospecting output contract is locked")
     except Exception as exc:
         return _fail(f"Output contract failed: {exc}")

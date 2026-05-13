@@ -27,7 +27,8 @@ services:
 
   prospecting:
     build:
-      context: .
+      context: ..
+      dockerfile: prospecting/Dockerfile
     image: prospecting-service:local
     container_name: prospecting-service
     environment:
