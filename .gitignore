@@ -29,3 +29,7 @@ dist/
 build/
 
 .cursorrules
+# Orchestrator
+src/orchestrator/dist/
+src/orchestrator/node_modules/
+*.js.map
