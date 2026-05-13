@@ -97,6 +97,8 @@ export function parseIcp(raw: unknown): ICP {
       typeof r.additional_comment === "string"
         ? r.additional_comment
         : undefined,
+    campaign_goal:
+      typeof r.campaign_goal === "string" ? r.campaign_goal : undefined,
   };
 }
 
@@ -215,6 +217,7 @@ export function buildOrchestratorCreatePayload(
       geographies: icp.geography,
       pain: icp.pain,
       additional_comment: icp.additional_comment,
+      campaign_goal: icp.campaign_goal,
     },
     product_profile: {
       name: product_profile.name,

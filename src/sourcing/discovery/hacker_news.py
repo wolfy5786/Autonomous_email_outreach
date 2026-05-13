@@ -117,7 +117,7 @@ def _hacker_news_block_from_plan(plan: Any) -> HackerNewsSource | None:
 def _build_algolia_params(filters: HackerNewsFilters, now_ts: int) -> dict[str, Any]:
     """Map plan filters to Algolia HN search params, preserving today's defaults."""
     if filters.tags:
-        tags_param = ",".join(filters.tags)
+        tags_param = f"({','.join(filters.tags)})" if len(filters.tags) > 1 else filters.tags[0]
     else:
         tags_param = "show_hn"
 

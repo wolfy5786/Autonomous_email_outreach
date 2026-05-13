@@ -9,7 +9,9 @@ from unittest.mock import patch
 from discovery.base import DiscoveryContext
 from discovery.product_hunt import (
     ProductHuntDiscovery,
+    _PH_OWN_DOMAINS,
     _dedupe_candidates_by_domain,
+    _node_to_candidate,
     _product_hunt_block_from_plan,
     _resolve_min_upvotes,
     _topic_slug_for_api,
@@ -47,7 +49,10 @@ def test_merge_ph_time_bounds_posted_before_intersection() -> None:
 
 def test_topic_slug_for_api_normalizes_label() -> None:
     assert _topic_slug_for_api("Developer Tools") == "developer-tools"
-    assert _topic_slug_for_api("  AI  ") == "ai"
+    assert _topic_slug_for_api("  AI  ") == "artificial-intelligence"
+    assert _topic_slug_for_api("machine learning") == "artificial-intelligence"
+    assert _topic_slug_for_api("game development") == "games"
+    assert _topic_slug_for_api("gaming") == "games"
 
 
 def test_topics_for_api_queries_uses_plan_topics_then_env() -> None:
@@ -61,6 +66,27 @@ def test_resolve_min_upvotes_env_can_only_raise_bar() -> None:
     assert _resolve_min_upvotes(5, 0) == 5
     assert _resolve_min_upvotes(5, 10) == 10
     assert _resolve_min_upvotes(None, 3) == 3
+
+
+def test_node_to_candidate_rejects_ph_own_domain() -> None:
+    now = datetime(2026, 5, 13, tzinfo=timezone.utc)
+    cutoff = datetime(2025, 11, 1, tzinfo=timezone.utc)
+    ph_url = "https://www.producthunt.com/posts/some-product"
+    node = {
+        "id": "1",
+        "slug": "some-product",
+        "name": "Some Product",
+        "tagline": "tagline",
+        "website": ph_url,
+        "url": ph_url,
+        "votesCount": 10,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "featuredAt": None,
+        "topics": {"edges": []},
+        "makers": [],
+    }
+    assert _node_to_candidate(node, cutoff, 0) is None, "PH URL as website must be rejected"
+    assert "producthunt.com" in _PH_OWN_DOMAINS
 
 
 def test_dedupe_candidates_by_domain_first_wins() -> None:

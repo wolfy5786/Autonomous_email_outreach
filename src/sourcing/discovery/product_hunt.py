@@ -187,12 +187,29 @@ def _product_hunt_block_from_plan(plan: Any) -> ProductHuntSource | None:
     return None
 
 
+_PH_TOPIC_ALIASES: dict[str, str] = {
+    "ai": "artificial-intelligence",
+    "artificial intelligence": "artificial-intelligence",
+    "ml": "artificial-intelligence",
+    "machine learning": "artificial-intelligence",
+    "gaming": "games",
+    "game development": "games",
+    "dev tools": "developer-tools",
+    "developer tools": "developer-tools",
+}
+
+# Products that link back to PH itself have no usable external domain.
+_PH_OWN_DOMAINS: frozenset[str] = frozenset({"producthunt.com", "www.producthunt.com"})
+
+
 def _topic_slug_for_api(topic: str) -> str:
     """Map plan topic labels (e.g. ``Developer Tools``) to PH-style slugs (``developer-tools``)."""
-    t = " ".join(topic.strip().split())
+    t = " ".join(topic.strip().split()).lower()
     if not t:
         return ""
-    return "-".join(part.lower() for part in t.split() if part)
+    if t in _PH_TOPIC_ALIASES:
+        return _PH_TOPIC_ALIASES[t]
+    return "-".join(t.split())
 
 
 def _topics_for_api_queries(filters: ProductHuntFilters | None, env_topic: str | None) -> list[str | None]:
@@ -443,7 +460,7 @@ def _node_to_candidate(
         website_url = None
 
     domain = _hostname_from_url(website_url)
-    if not domain:
+    if not domain or domain in _PH_OWN_DOMAINS:
         logger.debug(
             "stage=ph_candidate_skipped node_id=%s slug=%s reason=no_domain website=%r",
             node_id,

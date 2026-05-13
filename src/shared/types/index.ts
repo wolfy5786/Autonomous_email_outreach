@@ -78,6 +78,8 @@ export interface ICPDefinition {
   pain?: string;
   /** Free-form notes from the operator (constraints, nuance, exclusions). */
   additional_comment?: string;
+  /** One-sentence desired outcome — fed to the planning LLM. */
+  campaign_goal?: string;
   [key: string]: unknown;
 }
 

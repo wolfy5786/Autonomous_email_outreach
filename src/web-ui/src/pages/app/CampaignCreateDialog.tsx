@@ -20,12 +20,14 @@ import { Textarea } from "@/components/ui/textarea";
 
 type FormState = {
   name: string;
+  campaign_goal: string;
   icp: ICP;
   product_profile: ProductProfile;
 };
 
 const DEFAULT: FormState = {
   name: "",
+  campaign_goal: "",
   icp: {
     industry: "",
     employee_range: [50, 500],
@@ -54,7 +56,7 @@ export function CampaignCreateDialog() {
       endpoints.createCampaign(
         buildOrchestratorCreatePayload(
           vars.body.name,
-          vars.body.icp,
+          { ...vars.body.icp, campaign_goal: vars.body.campaign_goal || undefined },
           vars.body.product_profile,
           vars.stack,
         ),
@@ -88,7 +90,7 @@ export function CampaignCreateDialog() {
       <DialogTrigger asChild>
         <Button>New campaign</Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="flex flex-col max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>New campaign</DialogTitle>
           <DialogDescription>
@@ -97,7 +99,7 @@ export function CampaignCreateDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="grid gap-4">
+        <form id="campaign-form" onSubmit={handleSubmit} className="grid gap-4 overflow-y-auto pr-1">
           <div className="grid gap-2">
             <Label htmlFor="name">Campaign name</Label>
             <Input
@@ -106,6 +108,19 @@ export function CampaignCreateDialog() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="Q3 enterprise platform launch"
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="campaign-goal">
+              Campaign goal{" "}
+              <span className="font-normal text-black/50">(optional)</span>
+            </Label>
+            <Input
+              id="campaign-goal"
+              value={form.campaign_goal}
+              onChange={(e) => setForm({ ...form, campaign_goal: e.target.value })}
+              placeholder="Book a discovery call with the VP of Engineering"
             />
           </div>
 
@@ -265,20 +280,20 @@ export function CampaignCreateDialog() {
               {(create.error as Error).message}
             </div>
           )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Creating…" : "Create campaign"}
-            </Button>
-          </DialogFooter>
         </form>
+
+        <DialogFooter className="pt-2 border-t shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" form="campaign-form" disabled={create.isPending}>
+            {create.isPending ? "Creating…" : "Create campaign"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

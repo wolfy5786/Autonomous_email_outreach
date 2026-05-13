@@ -23,6 +23,7 @@ logger = logging.getLogger("sourcing.discovery.yc_directory")
 YC_OSS_BASE = "https://yc-oss.github.io/api/industries"
 B2B_URL = f"{YC_OSS_BASE}/b2b.json"
 HEALTHCARE_URL = f"{YC_OSS_BASE}/healthcare.json"
+CONSUMER_URL = f"{YC_OSS_BASE}/consumer.json"
 
 HTTP_TIMEOUT_S = 30.0
 
@@ -54,15 +55,18 @@ class YCDirectoryDiscovery(DiscoverySource):
         filters = block.filters if block is not None else YCDirectoryFilters()
 
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_S) as client:
-            (b2b_rows, b2b_err), (hc_rows, hc_err) = await asyncio.gather(
+            (b2b_rows, b2b_err), (hc_rows, hc_err), (consumer_rows, consumer_err) = await asyncio.gather(
                 self._fetch(client, B2B_URL, "b2b"),
                 self._fetch(client, HEALTHCARE_URL, "healthcare"),
+                self._fetch(client, CONSUMER_URL, "consumer"),
             )
 
         if b2b_err:
             result.errors.append(b2b_err)
         if hc_err:
             result.errors.append(hc_err)
+        if consumer_err:
+            result.errors.append(consumer_err)
 
         b2b_ids = {row.get("id") for row in b2b_rows if row.get("id") is not None}
 
@@ -70,7 +74,7 @@ class YCDirectoryDiscovery(DiscoverySource):
         skipped_no_domain = 0
         skipped_inactive = 0
         skipped_filter = 0
-        for raw in b2b_rows + hc_rows:
+        for raw in b2b_rows + hc_rows + consumer_rows:
             yc_id = raw.get("id")
             if yc_id is None or yc_id in by_id:
                 continue
@@ -89,10 +93,11 @@ class YCDirectoryDiscovery(DiscoverySource):
         result.candidates = list(by_id.values())
 
         logger.info(
-            "yc_directory: b2b=%s hc=%s emitted=%s skipped_inactive=%s skipped_no_domain=%s "
+            "yc_directory: b2b=%s hc=%s consumer=%s emitted=%s skipped_inactive=%s skipped_no_domain=%s "
             "skipped_filter=%s applied_filters=%s errors=%s",
             len(b2b_rows),
             len(hc_rows),
+            len(consumer_rows),
             len(result.candidates),
             skipped_inactive,
             skipped_no_domain,
@@ -233,7 +238,13 @@ def _candidate_matches_filters(
     if filters.industries:
         want = _norm_set(filters.industries)
         cand_industry = _norm(raw.get("industry"))
-        if cand_industry is None or cand_industry not in want:
+        cand_sub = _norm(raw.get("subindustry"))
+        cand_tags = {n for n in (_norm(t) for t in (raw.get("tags") or [])) if n}
+        if not (
+            (cand_industry is not None and cand_industry in want)
+            or (cand_sub is not None and cand_sub in want)
+            or bool(cand_tags & want)
+        ):
             return False
 
     if filters.subindustries:

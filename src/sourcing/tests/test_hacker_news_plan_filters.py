@@ -63,9 +63,16 @@ def test_build_algolia_params_defaults_preserve_current_behavior() -> None:
 
 
 def test_build_algolia_params_tags_join() -> None:
+    # Multiple tags use Algolia OR syntax (parentheses) — show_hn and launch_hn are mutually exclusive
     f = HackerNewsFilters(tags=["launch_hn", "show_hn"])
     params = _build_algolia_params(f, NOW_TS)
-    assert params["tags"] == "launch_hn,show_hn"
+    assert params["tags"] == "(launch_hn,show_hn)"
+
+
+def test_build_algolia_params_single_tag_no_parens() -> None:
+    f = HackerNewsFilters(tags=["show_hn"])
+    params = _build_algolia_params(f, NOW_TS)
+    assert params["tags"] == "show_hn"
 
 
 def test_build_algolia_params_created_after_overrides_lookback() -> None:

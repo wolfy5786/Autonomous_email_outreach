@@ -32,6 +32,8 @@ export interface ICP {
   pain: string;
   /** Optional operator notes passed through to planning / messaging context. */
   additional_comment?: string;
+  /** One-sentence desired outcome — fed to the planning LLM. */
+  campaign_goal?: string;
 }
 
 export interface ProductProfile {

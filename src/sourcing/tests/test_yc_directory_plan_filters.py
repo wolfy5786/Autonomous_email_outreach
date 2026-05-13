@@ -98,6 +98,17 @@ def test_industries_case_insensitive() -> None:
     assert _candidate_matches_filters(_cand(), _raw(industry="Healthcare"), f) is False
 
 
+def test_industries_falls_back_to_subindustry_and_tags() -> None:
+    # "Gaming" isn't a top-level YC industry — it appears as a tag or subindustry.
+    f = YCDirectoryFilters(industries=["Gaming"])
+    # Match via raw["tags"]
+    assert _candidate_matches_filters(_cand(), _raw(industry="B2B", tags=["Gaming", "B2B"]), f) is True
+    # Match via raw["subindustry"]
+    assert _candidate_matches_filters(_cand(), _raw(industry="B2B", subindustry="Gaming"), f) is True
+    # No match
+    assert _candidate_matches_filters(_cand(), _raw(industry="B2B", tags=["FinTech"]), f) is False
+
+
 def test_subindustries_case_insensitive() -> None:
     f = YCDirectoryFilters(subindustries=["engineering"])
     assert _candidate_matches_filters(_cand(), _raw(subindustry="Engineering"), f) is True
