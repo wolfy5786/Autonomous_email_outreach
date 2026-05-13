@@ -9,6 +9,12 @@ def configure_logging(level: str = "INFO") -> None:
     """Configure structlog + stdlib logging for JSON output to stdout."""
     logging.basicConfig(format="%(message)s", level=level.upper())
 
+    # httpx logs full request URLs (including API keys in query params) at DEBUG
+    # level. Cap these loggers so they never emit request details regardless of
+    # the service log level.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
