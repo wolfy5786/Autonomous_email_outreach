@@ -321,7 +321,9 @@ export function createCampaignRouter(
     }
   });
 
-  // GET /api/campaigns/:id/drafts — List all drafts for a campaign
+  // GET /api/campaigns/:id/drafts — List all drafts for a campaign, each
+  // enriched with the joined recipient (POC name/email + company name/domain)
+  // so the UI's drafts inbox can render Gmail-style rows without N+1 fetches.
   router.get('/:id/drafts', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { EmailDraft } = await import('../../shared/models');
@@ -329,8 +331,48 @@ export function createCampaignRouter(
       const filter: Record<string, unknown> = { campaign_id: String(req.params.id) };
       if (status) filter.status = status;
 
-      const drafts = await EmailDraft.find(filter).sort({ generated_at: -1 });
-      res.json(drafts);
+      const drafts = await EmailDraft.find(filter).sort({ generated_at: -1 }).lean();
+
+      const db = EmailDraft.db.db;
+      const pocIds = Array.from(new Set(drafts.map((d) => d.poc_id).filter(Boolean)));
+      const companyIds = Array.from(
+        new Set(drafts.map((d) => d.company_id).filter(Boolean)),
+      );
+      const [pocs, companies] = db
+        ? await Promise.all([
+            pocIds.length
+              ? db.collection('persons').find({ _id: { $in: pocIds as never[] } }).toArray()
+              : Promise.resolve([]),
+            companyIds.length
+              ? db
+                  .collection('companies')
+                  .find({ _id: { $in: companyIds as never[] } })
+                  .toArray()
+              : Promise.resolve([]),
+          ])
+        : [[], []];
+
+      const pocById = new Map(pocs.map((p) => [String(p._id), p]));
+      const coById = new Map(companies.map((c) => [String(c._id), c]));
+
+      res.json(
+        drafts.map((d) => {
+          const poc = pocById.get(String(d.poc_id));
+          const co = coById.get(String(d.company_id));
+          const pocName =
+            (poc?.name as string | undefined) ??
+            ([poc?.first_name, poc?.last_name].filter(Boolean).join(' ').trim() || null);
+          return {
+            ...d,
+            recipient: {
+              name: pocName,
+              email: (poc?.email as string | null) ?? null,
+              company: (co?.name as string | null) ?? null,
+              company_domain: (co?.domain as string | null) ?? null,
+            },
+          };
+        }),
+      );
     } catch (err) {
       next(err);
     }
