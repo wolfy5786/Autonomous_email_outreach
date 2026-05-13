@@ -34,7 +34,7 @@ export function createCampaignRouter(
       const statusRows = await statusRepo.list();
       const ids = statusRows.map((r) => r.campaign_id);
       const docs = await Campaign.find({ campaign_id: { $in: ids } })
-        .select('campaign_id name created_at updated_at')
+        .select('campaign_id name created_at updated_at icp')
         .lean();
       const byId = new Map(docs.map((d) => [d.campaign_id, d]));
 
@@ -49,6 +49,7 @@ export function createCampaignRouter(
           last_error: s.last_error,
           created_at: doc?.created_at ?? s.created_at,
           updated_at: s.updated_at,
+          icp: doc?.icp ?? null,
         };
       });
       res.json(out);

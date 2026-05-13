@@ -74,6 +74,10 @@ export interface ICPDefinition {
   target_titles?: string[];
   target_seniorities?: Seniority[];
   target_departments?: string[];
+  /** Buyer / account pain the campaign targets (optional when using loose UI shapes). */
+  pain?: string;
+  /** Free-form notes from the operator (constraints, nuance, exclusions). */
+  additional_comment?: string;
   [key: string]: unknown;
 }
 

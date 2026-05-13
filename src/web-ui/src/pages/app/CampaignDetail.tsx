@@ -122,6 +122,9 @@ export default function CampaignDetail() {
             />
             <Kvp k="Geography" v={c.icp.geography.join(", ") || "—"} />
             <Kvp k="Pain" v={c.icp.pain} />
+            {c.icp.additional_comment ? (
+              <Kvp k="Additional notes" v={c.icp.additional_comment} />
+            ) : null}
           </Section>
           <Section title="Product profile">
             <Kvp k="Name" v={c.product_profile.name} />

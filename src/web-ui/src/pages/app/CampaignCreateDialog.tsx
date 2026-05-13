@@ -2,7 +2,8 @@ import { FormEvent, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { endpoints } from "@/api/endpoints";
-import type { CampaignCreateRequest } from "@/api/types";
+import { buildOrchestratorCreatePayload } from "@/api/normalize";
+import type { ICP, ProductProfile } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +18,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-const DEFAULT: CampaignCreateRequest = {
+type FormState = {
+  name: string;
+  icp: ICP;
+  product_profile: ProductProfile;
+};
+
+const DEFAULT: FormState = {
   name: "",
   icp: {
     industry: "",
@@ -25,6 +32,7 @@ const DEFAULT: CampaignCreateRequest = {
     stack_includes: [],
     geography: ["US"],
     pain: "",
+    additional_comment: "",
   },
   product_profile: {
     name: "",
@@ -35,18 +43,28 @@ const DEFAULT: CampaignCreateRequest = {
 
 export function CampaignCreateDialog() {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<CampaignCreateRequest>(DEFAULT);
+  const [form, setForm] = useState<FormState>(DEFAULT);
   const [stackInput, setStackInput] = useState("");
+  const [rangeError, setRangeError] = useState<string | null>(null);
 
   const qc = useQueryClient();
 
   const create = useMutation({
-    mutationFn: () => endpoints.createCampaign(form),
+    mutationFn: (vars: { body: FormState; stack: string[] }) =>
+      endpoints.createCampaign(
+        buildOrchestratorCreatePayload(
+          vars.body.name,
+          vars.body.icp,
+          vars.body.product_profile,
+          vars.stack,
+        ),
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["campaigns"] });
       setOpen(false);
       setForm(DEFAULT);
       setStackInput("");
+      setRangeError(null);
     },
   });
 
@@ -56,8 +74,13 @@ export function CampaignCreateDialog() {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    setForm((f) => ({ ...f, icp: { ...f.icp, stack_includes: stack } }));
-    create.mutate();
+    const [minE, maxE] = form.icp.employee_range;
+    if (maxE < minE) {
+      setRangeError("Maximum headcount must be greater than or equal to minimum.");
+      return;
+    }
+    setRangeError(null);
+    create.mutate({ body: form, stack });
   }
 
   return (
@@ -85,6 +108,55 @@ export function CampaignCreateDialog() {
               placeholder="Q3 enterprise platform launch"
             />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="emp-min">ICP — employees (min)</Label>
+              <Input
+                id="emp-min"
+                type="number"
+                required
+                min={0}
+                value={form.icp.employee_range[0]}
+                onChange={(e) => {
+                  const v = Number.parseInt(e.target.value, 10);
+                  const n = Number.isFinite(v) ? Math.max(0, v) : 0;
+                  setForm({
+                    ...form,
+                    icp: {
+                      ...form.icp,
+                      employee_range: [n, form.icp.employee_range[1]],
+                    },
+                  });
+                }}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="emp-max">ICP — employees (max)</Label>
+              <Input
+                id="emp-max"
+                type="number"
+                required
+                min={0}
+                value={form.icp.employee_range[1]}
+                onChange={(e) => {
+                  const v = Number.parseInt(e.target.value, 10);
+                  const n = Number.isFinite(v) ? Math.max(0, v) : 0;
+                  setForm({
+                    ...form,
+                    icp: {
+                      ...form.icp,
+                      employee_range: [form.icp.employee_range[0], n],
+                    },
+                  });
+                }}
+              />
+            </div>
+          </div>
+
+          {rangeError ? (
+            <div className="text-sm text-red-600">{rangeError}</div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
@@ -126,6 +198,27 @@ export function CampaignCreateDialog() {
                 })
               }
               placeholder="Slow incident response, hard-to-trace deploys"
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="additional-comment">
+              ICP — additional notes{" "}
+              <span className="font-normal text-black/50">(optional)</span>
+            </Label>
+            <Textarea
+              id="additional-comment"
+              value={form.icp.additional_comment ?? ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  icp: {
+                    ...form.icp,
+                    additional_comment: e.target.value,
+                  },
+                })
+              }
+              placeholder="Exclusions, must-have signals, tone constraints…"
             />
           </div>
 

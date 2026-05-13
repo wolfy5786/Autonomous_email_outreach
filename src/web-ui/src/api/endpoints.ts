@@ -4,9 +4,14 @@
  */
 
 import { api } from "./client";
+import {
+  normalizeCampaignDetailResponse,
+  normalizeCampaignFromMongoDoc,
+  normalizeCampaignListRow,
+  type OrchestratorCampaignCreatePayload,
+} from "./normalize";
 import type {
   Campaign,
-  CampaignCreateRequest,
   CampaignSummary,
   CompanyDetail,
   Draft,
@@ -14,12 +19,38 @@ import type {
   TraceEvent,
 } from "./types";
 
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
 export const endpoints = {
   // Campaigns
-  listCampaigns: () => api.get<Campaign[]>("/api/campaigns"),
-  getCampaign: (id: string) => api.get<Campaign>(`/api/campaigns/${id}`),
-  createCampaign: (body: CampaignCreateRequest) =>
-    api.post<Campaign>("/api/campaigns", body),
+  listCampaigns: async () => {
+    const rows = await api.get<unknown[]>("/api/campaigns");
+    if (!Array.isArray(rows)) return [];
+    return rows.map((row) => {
+      if (isPlainObject(row) && "campaign_id" in row) {
+        return normalizeCampaignListRow(row);
+      }
+      return row as Campaign;
+    });
+  },
+
+  getCampaign: async (id: string) => {
+    const raw = await api.get<unknown>(`/api/campaigns/${id}`);
+    if (isPlainObject(raw) && ("campaign" in raw || "campaign_id" in raw)) {
+      return normalizeCampaignDetailResponse(raw);
+    }
+    return raw as Campaign;
+  },
+
+  createCampaign: async (body: OrchestratorCampaignCreatePayload) => {
+    const raw = await api.post<unknown>("/api/campaigns", body);
+    if (isPlainObject(raw)) {
+      return normalizeCampaignFromMongoDoc(raw);
+    }
+    return raw as Campaign;
+  },
 
   // Companies
   listCampaignCompanies: (campaignId: string) =>

@@ -6,14 +6,23 @@
  * (snake_case keys preserved for fidelity with the rest of the system).
  */
 
+/**
+ * UI statuses include legacy mock values and Orchestrator lifecycle values
+ * (see src/shared/types/index.ts).
+ */
 export type CampaignStatus =
+  | "pending"
   | "draft"
   | "planning"
   | "sourcing"
+  | "prospecting"
   | "drafting"
+  | "messaging"
+  | "paused"
   | "ready_for_review"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export interface ICP {
   industry: string;
@@ -21,6 +30,8 @@ export interface ICP {
   stack_includes: string[];
   geography: string[];
   pain: string;
+  /** Optional operator notes passed through to planning / messaging context. */
+  additional_comment?: string;
 }
 
 export interface ProductProfile {
@@ -44,12 +55,6 @@ export interface Campaign {
     pocs: number;
     drafts: number;
   };
-}
-
-export interface CampaignCreateRequest {
-  name: string;
-  icp: ICP;
-  product_profile: ProductProfile;
 }
 
 export interface Headquarters {

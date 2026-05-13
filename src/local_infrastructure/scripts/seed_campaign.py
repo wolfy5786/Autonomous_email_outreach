@@ -21,6 +21,7 @@ SAMPLE_ICP = {
     ],
     "geography": ["United States", "Canada", "United Kingdom"],
     "pain": "Shipping near-daily prompt, router, and retrieval changes without silent regressions — retrieval drift that drops NDCG overnight, tool-policy escapes, cost spikes from unbounded context, and buyer-driven requests for reproducible eval reports, trace-level provenance for bad answers, and evidence that red-team suites actually gate prod.",
+    "additional_comment": "Prefer teams already running eval gates in CI; exclude pure chatbot wrappers with no retrieval.",
 }
 
 SAMPLE_PRODUCT = {

@@ -7,9 +7,11 @@ import { HttpResponse, http } from "msw";
 
 import type {
   Campaign,
-  CampaignCreateRequest,
   Draft,
 } from "../types";
+import {
+  normalizeCampaignFromMongoDoc,
+} from "../normalize";
 import { seed } from "./seed";
 
 // MSW operates on the runtime URL. Vite proxies absolute paths; relative /api/*
@@ -35,18 +37,19 @@ export const handlers = [
   }),
 
   http.post(url("/api/campaigns"), async ({ request }) => {
-    const body = (await request.json()) as CampaignCreateRequest;
-    const created: Campaign = {
-      id: `c-new-${Math.random().toString(36).slice(2, 8)}`,
+    const body = (await request.json()) as Record<string, unknown>;
+    const id = `c-new-${Math.random().toString(36).slice(2, 8)}`;
+    const doc = {
+      campaign_id: id,
       name: body.name,
       icp: body.icp,
       product_profile: body.product_profile,
       status: "planning",
       created_at: new Date().toISOString(),
-      counts: { companies: 0, pocs: 0, drafts: 0 },
     };
+    const created = normalizeCampaignFromMongoDoc(doc);
     newCampaigns.unshift(created);
-    return HttpResponse.json(created, { status: 201 });
+    return HttpResponse.json(doc, { status: 201 });
   }),
 
   http.get(url("/api/campaigns/:id/companies"), ({ params }) => {
