@@ -3,11 +3,14 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { Mail, Search } from "lucide-react";
 
 import { endpoints } from "@/api/endpoints";
 import type { Draft, DraftStatus } from "@/api/types";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { timeAgo } from "@/lib/format";
@@ -121,51 +124,84 @@ export default function DraftsList() {
         </select>
       </div>
 
-      <div className="mt-6 space-y-2">
+      <div className="mt-6 rounded-xl border border-black/10 bg-white overflow-hidden">
         {isLoading && (
-          <>
+          <div className="p-3 space-y-2">
             {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-24 w-full" />
+              <Skeleton key={i} className="h-16 w-full" />
             ))}
-          </>
-        )}
-
-        {!isLoading && rows.length === 0 && (
-          <div className="rounded-xl border border-dashed border-black/15 p-12 text-center text-black/40">
-            <Mail className="mx-auto size-8 text-black/20" />
-            <div className="mt-3">No drafts matched.</div>
           </div>
         )}
 
-        {rows.map((d) => (
-          <Link
-            key={d.id}
-            to={`/app/drafts/${d.id}`}
-            className="block rounded-xl border border-black/10 bg-white p-5 hover:border-black/30 transition-colors"
-          >
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-3 min-w-0">
-                <Badge variant={STATUS_VARIANT[d.status]}>
-                  {STATUS_LABEL[d.status]}
-                </Badge>
-                <h3 className="font-medium truncate">{d.subject}</h3>
-              </div>
-              <div className="text-xs text-black/40 shrink-0">
-                {timeAgo(d.generated_at)} · {d.campaign_name}
-              </div>
-            </div>
-            <p className="mt-3 text-sm text-black/60 line-clamp-2">{d.body}</p>
-            {d.personalization_hooks.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {d.personalization_hooks.map((h) => (
-                  <Badge key={h} variant="outline">
-                    {h}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </Link>
-        ))}
+        {!isLoading && rows.length === 0 && (
+          <EmptyState
+            icon={<Mail className="size-5" />}
+            title="No drafts matched"
+            description={
+              search || statusFilter || campaignFilter
+                ? "Try clearing your filters or search."
+                : "Drafts will appear here as the messaging stage produces them."
+            }
+          />
+        )}
+
+        {!isLoading && rows.length > 0 && (
+          <ul className="divide-y divide-black/5">
+            {rows.map((d, i) => {
+              const recipient = d.recipient;
+              const recipientName = recipient?.name ?? "Unknown recipient";
+              const senderLine = [
+                recipientName,
+                recipient?.company && `· ${recipient.company}`,
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <motion.li
+                  key={d.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    delay: Math.min(i * 0.025, 0.4),
+                    duration: 0.25,
+                  }}
+                >
+                  <Link
+                    to={`/app/drafts/${d.id}`}
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-black/[0.02] transition-colors"
+                  >
+                    <Avatar
+                      name={recipient?.name ?? undefined}
+                      domain={recipient?.company_domain ?? undefined}
+                      size={40}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate">
+                          {senderLine || "Unknown recipient"}
+                        </span>
+                        <Badge variant={STATUS_VARIANT[d.status]}>
+                          {STATUS_LABEL[d.status]}
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 text-sm text-black/80 truncate">
+                        <span className="font-medium">{d.subject}</span>
+                        <span className="text-black/40"> — </span>
+                        <span className="text-black/50">{d.body}</span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-black/40 truncate">
+                        {d.campaign_name}
+                      </div>
+                    </div>
+                    <div className="text-xs text-black/40 shrink-0 tabular-nums">
+                      {timeAgo(d.generated_at)}
+                    </div>
+                  </Link>
+                </motion.li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );

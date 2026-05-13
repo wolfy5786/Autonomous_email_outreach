@@ -6,10 +6,13 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { Building2, Search } from "lucide-react";
 
 import { endpoints } from "@/api/endpoints";
 import type { CompanyDetail } from "@/api/types";
+import { Avatar } from "@/components/ui/avatar";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -135,30 +138,42 @@ export default function CompaniesList() {
 
             {!isLoading && rows.length === 0 && (
               <tr>
-                <td
-                  colSpan={5}
-                  className="px-6 py-16 text-center text-black/50"
-                >
-                  <Building2 className="mx-auto size-8 text-black/20" />
-                  <div className="mt-3">No companies matched.</div>
+                <td colSpan={5} className="p-0">
+                  <EmptyState
+                    icon={<Building2 className="size-5" />}
+                    title="No companies matched"
+                    description={
+                      search
+                        ? "Try a different search term or clear the campaign filter."
+                        : "Companies will appear here as the sourcing pipeline discovers them."
+                    }
+                  />
                 </td>
               </tr>
             )}
 
-            {rows.map((co) => (
-              <tr
+            {rows.map((co, i) => (
+              <motion.tr
                 key={co.id}
                 className="border-b border-black/5 hover:bg-black/[0.02]"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.015, 0.4), duration: 0.25 }}
               >
                 <td className="px-6 py-4">
-                  <Link
-                    to={`/app/companies/${co.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    {co.name}
-                  </Link>
-                  <div className="text-xs text-black/40">
-                    {co.domain ?? "—"}
+                  <div className="flex items-center gap-3">
+                    <Avatar name={co.name} domain={co.domain ?? undefined} size={32} />
+                    <div className="min-w-0">
+                      <Link
+                        to={`/app/companies/${co.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {co.name}
+                      </Link>
+                      <div className="text-xs text-black/40">
+                        {co.domain ?? "—"}
+                      </div>
+                    </div>
                   </div>
                 </td>
                 <td className="px-6 py-4 text-black/70">
@@ -177,7 +192,7 @@ export default function CompaniesList() {
                 <td className="px-6 py-4 text-right tabular-nums">
                   {co.pocs.length}
                 </td>
-              </tr>
+              </motion.tr>
             ))}
           </tbody>
         </table>

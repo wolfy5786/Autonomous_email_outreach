@@ -93,6 +93,60 @@ export const endpoints = {
   requestEarlyAccess: (body: EarlyAccessRequest) =>
     api.post<{ ok: true }>("/api/early-access", body),
 
+  // Observability — global stats + live event feed used by the dashboard.
+  // Passing campaignId scopes everything down to a single campaign.
+  getObservabilityStats: (windowSeconds = 3600, campaignId?: string) => {
+    const params = new URLSearchParams();
+    params.set("window", String(windowSeconds));
+    if (campaignId) params.set("campaign_id", campaignId);
+    return api.get<{
+      window_seconds: number;
+      generated_at: string;
+      events_count: number;
+      events_count_prev: number;
+      error_count: number;
+      error_rate: number;
+      active_campaigns: number;
+      services: Array<{
+        service: string;
+        events: number;
+        errors: number;
+        p95_ms: number | null;
+        avg_ms: number | null;
+      }>;
+      buckets: Array<{
+        ts: string;
+        total: number;
+        by_service: Record<string, number>;
+      }>;
+    }>(`/api/observability/stats?${params.toString()}`);
+  },
+
+  getObservabilityEvents: (
+    limit = 200,
+    opts?: { service?: string; phase?: string; campaignId?: string },
+  ) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (opts?.service) params.set("service", opts.service);
+    if (opts?.phase) params.set("phase", opts.phase);
+    if (opts?.campaignId) params.set("campaign_id", opts.campaignId);
+    return api.get<
+      Array<{
+        id: string;
+        trace_id: string | null;
+        campaign_id: string | null;
+        service: string | null;
+        event_name: string | null;
+        phase: "start" | "end" | "error" | "emit" | null;
+        timestamp: string | null;
+        duration_ms: number | null;
+        error_type: string | null;
+        error_message: string | null;
+      }>
+    >(`/api/observability/events?${params.toString()}`);
+  },
+
   // Service status — orchestrator-side campaign counts (powers the Overview page).
   getStatus: () =>
     api.get<{

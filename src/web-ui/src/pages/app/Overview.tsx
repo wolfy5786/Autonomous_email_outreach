@@ -1,6 +1,17 @@
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Activity, Building2, Mail, Users } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+} from "recharts";
 
 import { endpoints } from "@/api/endpoints";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +21,7 @@ import {
   campaignStatusVariant,
 } from "@/lib/campaign-status";
 import { formatDateTime } from "@/lib/format";
+import type { CampaignStatus } from "@/api/types";
 
 export default function Overview() {
   const statusQuery = useQuery({
@@ -67,6 +79,55 @@ export default function Overview() {
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     .slice(0, 5);
 
+  // Drafts written per day for the last 7 days (sparkline).
+  const draftsPerDay = useMemo(() => {
+    const days: { day: string; label: string; count: number }[] = [];
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      days.push({
+        day: d.toISOString().slice(0, 10),
+        label: d.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        }),
+        count: 0,
+      });
+    }
+    const byDay = new Map(days.map((d) => [d.day, d]));
+    for (const q of draftsQueries) {
+      for (const draft of q.data ?? []) {
+        const key = (draft.generated_at ?? "").slice(0, 10);
+        const bucket = byDay.get(key);
+        if (bucket) bucket.count += 1;
+      }
+    }
+    return days;
+  }, [draftsQueries]);
+
+  // Campaigns by status (donut).
+  const statusBreakdown = useMemo(() => {
+    const by = statusQuery.data?.campaigns.by_status ?? {};
+    const COLORS: Record<string, string> = {
+      planning: "#6366f1",
+      sourcing: "#3b82f6",
+      prospecting: "#0ea5e9",
+      messaging: "#f59e0b",
+      completed: "#10b981",
+      paused: "#a3a3a3",
+      failed: "#ef4444",
+      cancelled: "#737373",
+    };
+    return Object.entries(by)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => ({
+        name: campaignStatusLabel(k as CampaignStatus),
+        value: v,
+        fill: COLORS[k] ?? "#737373",
+      }));
+  }, [statusQuery.data]);
+
   return (
     <div className="space-y-8">
       <div>
@@ -102,6 +163,93 @@ export default function Overview() {
           value={totals.drafts}
           loading={draftsQueries.some((q) => q.isLoading)}
         />
+      </div>
+
+      {/* Charts */}
+      <div className="grid md:grid-cols-3 gap-3">
+        <div className="md:col-span-2 rounded-xl border border-black/10 bg-white p-5">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm uppercase tracking-wide text-black/40">
+              Drafts last 7 days
+            </h2>
+            <span className="text-xs text-black/40 tabular-nums">
+              {draftsPerDay.reduce((s, d) => s + d.count, 0)} total
+            </span>
+          </div>
+          <div className="mt-3 h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={draftsPerDay}
+                margin={{ top: 5, right: 5, left: 0, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="draftFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "rgba(0,0,0,0.4)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  cursor={{ stroke: "rgba(0,0,0,0.1)" }}
+                  contentStyle={{
+                    fontSize: 12,
+                    borderRadius: 8,
+                    border: "1px solid rgba(0,0,0,0.1)",
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="count"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fill="url(#draftFill)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-5">
+          <h2 className="text-sm uppercase tracking-wide text-black/40">
+            By status
+          </h2>
+          <div className="mt-3 h-32">
+            {statusBreakdown.length === 0 ? (
+              <p className="h-full flex items-center justify-center text-xs text-black/40">
+                No campaigns yet
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Tooltip
+                    contentStyle={{
+                      fontSize: 12,
+                      borderRadius: 8,
+                      border: "1px solid rgba(0,0,0,0.1)",
+                    }}
+                  />
+                  <Pie
+                    data={statusBreakdown}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={28}
+                    outerRadius={52}
+                    paddingAngle={2}
+                  >
+                    {statusBreakdown.map((s, i) => (
+                      <Cell key={i} fill={s.fill} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Recent campaigns */}

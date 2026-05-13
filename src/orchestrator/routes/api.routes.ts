@@ -79,6 +79,189 @@ export function createApiRouter(statusRepo: CampaignStatusRepository): Router {
     }
   });
 
+  // ── Observability ──────────────────────────────────────────────
+  // Aggregated stats + recent events across all campaigns, used by the
+  // /app/observability dashboard. Reads from the trace_events collection
+  // owned by the observability service.
+
+  // GET /api/observability/stats?window=3600
+  // Returns counts/durations for the configured window, grouped by service,
+  // plus per-minute buckets for the events-over-time chart.
+  router.get(
+    '/observability/stats',
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const db = EmailDraft.db.db;
+        if (!db) {
+          res.json({ window_seconds: 0, events_count: 0, services: [], buckets: [] });
+          return;
+        }
+        const windowSec = Math.max(
+          60,
+          Math.min(parseInt(String(req.query.window ?? '3600'), 10) || 3600, 86400),
+        );
+        const now = Date.now();
+        const since = new Date(now - windowSec * 1000);
+        const prevSince = new Date(now - 2 * windowSec * 1000);
+
+        const campaignId = req.query.campaign_id
+          ? String(req.query.campaign_id)
+          : null;
+        const baseFilter: Record<string, unknown> = campaignId
+          ? { campaign_id: campaignId }
+          : {};
+
+        const events = await db
+          .collection('trace_events')
+          .find({ ...baseFilter, timestamp: { $gte: since } })
+          .project({
+            timestamp: 1,
+            service: 1,
+            phase: 1,
+            duration_ms: 1,
+            campaign_id: 1,
+          })
+          .limit(5000)
+          .toArray();
+
+        const prevCount = await db
+          .collection('trace_events')
+          .countDocuments({
+            ...baseFilter,
+            timestamp: { $gte: prevSince, $lt: since },
+          });
+
+        // Per-service rollup.
+        type ServiceAgg = {
+          service: string;
+          events: number;
+          errors: number;
+          durations: number[];
+        };
+        const byService = new Map<string, ServiceAgg>();
+        const activeCampaigns = new Set<string>();
+        let errors = 0;
+        for (const e of events) {
+          const svc = String(e.service ?? 'unknown');
+          const agg =
+            byService.get(svc) ??
+            ({ service: svc, events: 0, errors: 0, durations: [] } as ServiceAgg);
+          agg.events += 1;
+          if (e.phase === 'error') agg.errors += 1;
+          if (typeof e.duration_ms === 'number') agg.durations.push(e.duration_ms);
+          byService.set(svc, agg);
+          if (e.phase === 'error') errors += 1;
+          if (e.campaign_id) activeCampaigns.add(String(e.campaign_id));
+        }
+
+        const services = Array.from(byService.values())
+          .map((a) => ({
+            service: a.service,
+            events: a.events,
+            errors: a.errors,
+            p95_ms: percentile(a.durations, 0.95),
+            avg_ms: a.durations.length
+              ? Math.round(a.durations.reduce((s, x) => s + x, 0) / a.durations.length)
+              : null,
+          }))
+          .sort((a, b) => b.events - a.events);
+
+        // Per-minute buckets, keyed by ISO minute. Build a continuous range so the
+        // chart shows zero-value gaps instead of missing ticks.
+        const bucketCount = Math.min(Math.ceil(windowSec / 60), 240);
+        const bucketSpanMs = (windowSec * 1000) / bucketCount;
+        const bucketStartMs = now - bucketCount * bucketSpanMs;
+        const allServices = Array.from(byService.keys());
+        const buckets: {
+          ts: string;
+          total: number;
+          by_service: Record<string, number>;
+        }[] = [];
+        for (let i = 0; i < bucketCount; i += 1) {
+          const start = bucketStartMs + i * bucketSpanMs;
+          buckets.push({
+            ts: new Date(start).toISOString(),
+            total: 0,
+            by_service: Object.fromEntries(allServices.map((s) => [s, 0])),
+          });
+        }
+        for (const e of events) {
+          const tMs = new Date(e.timestamp as unknown as string).getTime();
+          const idx = Math.floor((tMs - bucketStartMs) / bucketSpanMs);
+          if (idx < 0 || idx >= bucketCount) continue;
+          buckets[idx].total += 1;
+          const svc = String(e.service ?? 'unknown');
+          buckets[idx].by_service[svc] = (buckets[idx].by_service[svc] ?? 0) + 1;
+        }
+
+        res.json({
+          window_seconds: windowSec,
+          generated_at: new Date(now).toISOString(),
+          events_count: events.length,
+          events_count_prev: prevCount,
+          error_count: errors,
+          error_rate: events.length > 0 ? errors / events.length : 0,
+          active_campaigns: activeCampaigns.size,
+          services,
+          buckets,
+        });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  // GET /api/observability/events?limit=200&service=&phase=
+  // Recent trace events globally, newest first. Used by the live events table.
+  router.get(
+    '/observability/events',
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const db = EmailDraft.db.db;
+        if (!db) {
+          res.json([]);
+          return;
+        }
+        const limit = Math.max(
+          1,
+          Math.min(parseInt(String(req.query.limit ?? '200'), 10) || 200, 1000),
+        );
+        const filter: Record<string, unknown> = {};
+        if (req.query.service) filter.service = String(req.query.service);
+        if (req.query.phase) filter.phase = String(req.query.phase);
+        if (req.query.campaign_id)
+          filter.campaign_id = String(req.query.campaign_id);
+
+        const events = await db
+          .collection('trace_events')
+          .find(filter)
+          .sort({ timestamp: -1 })
+          .limit(limit)
+          .toArray();
+
+        res.json(
+          events.map((e) => ({
+            id: String(e._id),
+            trace_id: e.trace_id ?? null,
+            campaign_id: e.campaign_id ?? null,
+            service: e.service ?? null,
+            event_name: e.event_name ?? null,
+            phase: e.phase ?? null,
+            timestamp:
+              e.timestamp instanceof Date
+                ? e.timestamp.toISOString()
+                : (e.timestamp ?? null),
+            duration_ms: e.duration_ms ?? null,
+            error_type: e.error_type ?? null,
+            error_message: e.error_message ?? null,
+          })),
+        );
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
   // GET /api/companies/:id — One company with its POCs.
   router.get('/companies/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -168,4 +351,14 @@ export function createApiRouter(statusRepo: CampaignStatusRepository): Router {
   });
 
   return router;
+}
+
+function percentile(values: number[], p: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil(p * sorted.length) - 1),
+  );
+  return Math.round(sorted[idx]);
 }

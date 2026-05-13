@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowLeft, Building2, Mail, RefreshCw, Trash2 } from "lucide-react";
 
 import { endpoints } from "@/api/endpoints";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tabs,
@@ -28,6 +31,8 @@ import {
 import { formatDateTime } from "@/lib/format";
 
 import { CampaignTimeline } from "@/components/app/CampaignTimeline";
+import { ObservabilityDashboard } from "@/components/app/ObservabilityDashboard";
+import { PipelineStageStrip } from "@/components/app/PipelineStageStrip";
 
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
@@ -110,12 +115,19 @@ export default function CampaignDetail() {
           <ArrowLeft className="size-4" />
           All campaigns
         </Link>
-        <div className="mt-3 flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
+      </div>
+
+      {/* Sticky campaign header — title, status, and pipeline progress stay
+          visible while scrolling through tabs. */}
+      <div className="sticky top-0 z-10 -mx-6 px-6 py-4 bg-neutral-50/95 backdrop-blur border-b border-black/5 space-y-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight truncate">
               {c.name}
             </h1>
-            <p className="mt-1 text-sm text-black/50 font-mono">{c.id}</p>
+            <p className="mt-0.5 text-xs text-black/40 font-mono truncate">
+              {c.id}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <Badge variant={campaignStatusVariant(c.status)}>
@@ -157,6 +169,7 @@ export default function CampaignDetail() {
             </div>
           </div>
         </div>
+        <PipelineStageStrip status={c.status} />
       </div>
 
       {/* Quick stats */}
@@ -216,27 +229,38 @@ export default function CampaignDetail() {
           {companiesQuery.isLoading ? (
             <Skeleton className="h-32 w-full" />
           ) : (companiesQuery.data?.length ?? 0) === 0 ? (
-            <p className="text-sm text-black/50 italic py-8 text-center">
-              No companies sourced yet.
-            </p>
+            <div className="rounded-lg border border-black/10 bg-white">
+              <EmptyState
+                icon={<Building2 className="size-5" />}
+                title="No companies sourced yet"
+                description="The sourcing pipeline will populate this list once it discovers companies that match the ICP."
+              />
+            </div>
           ) : (
             <div className="rounded-lg border border-black/10 bg-white divide-y divide-black/5">
-              {companiesQuery.data!.map((co) => (
-                <Link
+              {companiesQuery.data!.map((co, i) => (
+                <motion.div
                   key={co.id}
-                  to={`/app/companies/${co.id}`}
-                  className="flex items-center justify-between p-4 hover:bg-black/[0.02]"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(i * 0.02, 0.4), duration: 0.25 }}
                 >
-                  <div>
-                    <div className="font-medium">{co.name}</div>
-                    <div className="text-xs text-black/40">
-                      {co.domain ?? "—"} · {co.industry ?? "—"}
+                  <Link
+                    to={`/app/companies/${co.id}`}
+                    className="flex items-center gap-3 p-4 hover:bg-black/[0.02]"
+                  >
+                    <Avatar name={co.name} domain={co.domain ?? undefined} size={36} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{co.name}</div>
+                      <div className="text-xs text-black/40 truncate">
+                        {co.domain ?? "—"} · {co.industry ?? "—"}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-xs text-black/50">
-                    {co.pocs.length} POC{co.pocs.length === 1 ? "" : "s"}
-                  </div>
-                </Link>
+                    <div className="text-xs text-black/50 shrink-0">
+                      {co.pocs.length} POC{co.pocs.length === 1 ? "" : "s"}
+                    </div>
+                  </Link>
+                </motion.div>
               ))}
             </div>
           )}
@@ -246,34 +270,61 @@ export default function CampaignDetail() {
           {draftsQuery.isLoading ? (
             <Skeleton className="h-32 w-full" />
           ) : (draftsQuery.data?.length ?? 0) === 0 ? (
-            <p className="text-sm text-black/50 italic py-8 text-center">
-              No drafts generated yet.
-            </p>
+            <div className="rounded-lg border border-black/10 bg-white">
+              <EmptyState
+                icon={<Mail className="size-5" />}
+                title="No drafts generated yet"
+                description="As the pipeline reaches messaging, personalized drafts will appear here."
+              />
+            </div>
           ) : (
             <div className="rounded-lg border border-black/10 bg-white divide-y divide-black/5">
-              {draftsQuery.data!.map((d) => (
-                <Link
+              {draftsQuery.data!.map((d, i) => (
+                <motion.div
                   key={d.id}
-                  to={`/app/drafts/${d.id}`}
-                  className="block p-4 hover:bg-black/[0.02]"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(i * 0.04, 0.4), duration: 0.25 }}
                 >
-                  <div className="flex items-center gap-2">
-                    <Badge variant={d.status === "draft_created" ? "success" : d.status === "failed" ? "destructive" : "warning"}>
-                      {d.status.replace("_", " ")}
-                    </Badge>
-                    <div className="font-medium truncate">{d.subject}</div>
-                  </div>
-                  <div className="text-xs text-black/50 mt-2 line-clamp-2">
-                    {d.body}
-                  </div>
-                </Link>
+                  <Link
+                    to={`/app/drafts/${d.id}`}
+                    className="block p-4 hover:bg-black/[0.02]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          d.status === "draft_created"
+                            ? "success"
+                            : d.status === "failed"
+                              ? "destructive"
+                              : "warning"
+                        }
+                      >
+                        {d.status.replace("_", " ")}
+                      </Badge>
+                      <div className="font-medium truncate">{d.subject}</div>
+                    </div>
+                    <div className="text-xs text-black/50 mt-2 line-clamp-2">
+                      {d.body}
+                    </div>
+                  </Link>
+                </motion.div>
               ))}
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="timeline">
-          <CampaignTimeline campaignId={c.id} />
+        <TabsContent value="timeline" className="space-y-6">
+          <ObservabilityDashboard
+            campaignId={c.id}
+            showActiveCampaignsTile={false}
+          />
+          <div className="rounded-xl border border-black/10 bg-white p-5">
+            <h2 className="text-sm uppercase tracking-wide text-black/40 mb-4">
+              Trace
+            </h2>
+            <CampaignTimeline campaignId={c.id} />
+          </div>
         </TabsContent>
       </Tabs>
 
