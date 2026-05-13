@@ -12,4 +12,7 @@ export const config = {
     'postgres://orchestrator:orchestrator@localhost:5432/email_outreach',
   retryLimit: parseInt(process.env.RETRY_LIMIT ?? '3', 10),
   logLevel: process.env.LOG_LEVEL ?? 'info',
+  // Cosmetic gap between prospecting.completed and messaging.requested so
+  // the prospecting stage is visible on the campaign timeline (default 2s).
+  prospectingDelayMs: parseInt(process.env.PROSPECTING_DELAY_MS ?? '2000', 10),
 } as const;

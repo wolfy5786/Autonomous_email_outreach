@@ -190,6 +190,14 @@ export class PipelineService {
     campaign.pipeline_state.messaging_target_ids = cappedIds;
 
     await this.advanceStage(campaign, 'messaging');
+
+    // Cosmetic dwell on the prospecting stage so it's actually visible on
+    // the campaign timeline — without this, prospecting completes in ~1s
+    // and the demo viewer barely sees the transition.
+    if (config.prospectingDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, config.prospectingDelayMs));
+    }
+
     for (const poc_id of cappedIds) {
       await this.broker.publish('messaging.requested', {
         campaign_id,
