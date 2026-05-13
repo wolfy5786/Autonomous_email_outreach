@@ -213,6 +213,73 @@ export function createCampaignRouter(
     }
   });
 
+  // GET /api/campaigns/:id/companies — List companies sourced for a campaign,
+  // each enriched with its POCs from the persons collection.
+  router.get('/:id/companies', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { EmailDraft } = await import('../../shared/models');
+      const db = EmailDraft.db.db;
+      if (!db) {
+        res.json([]);
+        return;
+      }
+      const campaignId = String(req.params.id);
+      const companies = await db
+        .collection('companies')
+        .find({ campaign_ids: campaignId })
+        .project({ _id: 1, name: 1, domain: 1, industry: 1, employee_count: 1, headquarters: 1, extra: 1, scrape_mode_last: 1 })
+        .limit(1000)
+        .toArray();
+
+      const companyIds = companies.map((c) => c._id);
+      const persons = companyIds.length
+        ? await db
+            .collection('persons')
+            .find({ company_id: { $in: companyIds } })
+            .project({ _id: 1, company_id: 1, name: 1, first_name: 1, last_name: 1, title: 1, email: 1, linkedin_url: 1, seniority: 1 })
+            .toArray()
+        : [];
+
+      const pocsByCompany: Record<string, unknown[]> = {};
+      for (const p of persons) {
+        const cid = String(p.company_id);
+        const fullName =
+          (p.name as string | undefined) ??
+          ([p.first_name, p.last_name].filter(Boolean).join(' ').trim() || null);
+        (pocsByCompany[cid] ??= []).push({
+          id: String(p._id),
+          company_id: cid,
+          full_name: fullName,
+          title: p.title ?? undefined,
+          email: p.email ?? undefined,
+          linkedin_url: p.linkedin_url ?? undefined,
+          seniority: p.seniority ?? undefined,
+        });
+      }
+
+      res.json(
+        companies.map((c) => ({
+          id: String(c._id),
+          name: c.name ?? null,
+          domain: c.domain ?? undefined,
+          industry: c.industry ?? undefined,
+          employee_count: c.employee_count ?? undefined,
+          hq: c.headquarters
+            ? {
+                city: c.headquarters.city ?? undefined,
+                country: c.headquarters.country ?? undefined,
+              }
+            : undefined,
+          last_scrape_mode: c.scrape_mode_last ?? undefined,
+          extra: c.extra ?? undefined,
+          pocs: pocsByCompany[String(c._id)] ?? [],
+        })),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // GET /api/campaigns/:id/drafts — List all drafts for a campaign
   router.get('/:id/drafts', async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -223,6 +290,48 @@ export function createCampaignRouter(
 
       const drafts = await EmailDraft.find(filter).sort({ generated_at: -1 });
       res.json(drafts);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/campaigns/:id/timeline — Trace events for the campaign, sorted oldest first.
+  // The observability service owns the trace_events collection; we read directly from
+  // Mongo here so the gateway exposes the timeline alongside the campaign endpoints
+  // (UI calls /api/* through nginx → gateway and shouldn't need a separate origin).
+  router.get('/:id/timeline', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { EmailDraft } = await import('../../shared/models');
+      const db = EmailDraft.db.db;
+      if (!db) {
+        res.json([]);
+        return;
+      }
+      const events = await db
+        .collection('trace_events')
+        .find({ campaign_id: String(req.params.id) })
+        .sort({ timestamp: 1 })
+        .limit(500)
+        .toArray();
+
+      res.json(
+        events.map((e) => ({
+          id: String(e._id),
+          trace_id: e.trace_id ?? null,
+          campaign_id: e.campaign_id ?? null,
+          service: e.service ?? null,
+          event_name: e.event_name ?? null,
+          phase: e.phase ?? null,
+          timestamp:
+            e.timestamp instanceof Date
+              ? e.timestamp.toISOString()
+              : (e.timestamp ?? null),
+          duration_ms: e.duration_ms ?? null,
+          error_type: e.error_type ?? null,
+          error_message: e.error_message ?? null,
+          metadata: e.metadata ?? null,
+        })),
+      );
     } catch (err) {
       next(err);
     }

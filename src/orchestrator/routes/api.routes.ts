@@ -79,6 +79,49 @@ export function createApiRouter(statusRepo: CampaignStatusRepository): Router {
     }
   });
 
+  // GET /api/companies/:id — One company with its POCs.
+  router.get('/companies/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const db = EmailDraft.db.db;
+      if (!db) throw new AppError(503, 'Database unavailable');
+      const companyId = String(req.params.id);
+      const c = await db.collection('companies').findOne({ _id: companyId as unknown as never });
+      if (!c) throw new AppError(404, 'Company not found');
+      const persons = await db
+        .collection('persons')
+        .find({ company_id: companyId })
+        .toArray();
+      res.json({
+        id: String(c._id),
+        name: c.name ?? null,
+        domain: c.domain ?? undefined,
+        industry: c.industry ?? undefined,
+        employee_count: c.employee_count ?? undefined,
+        hq: c.headquarters
+          ? {
+              city: c.headquarters.city ?? undefined,
+              country: c.headquarters.country ?? undefined,
+            }
+          : undefined,
+        last_scrape_mode: c.scrape_mode_last ?? undefined,
+        extra: c.extra ?? undefined,
+        pocs: persons.map((p) => ({
+          id: String(p._id),
+          company_id: String(p.company_id),
+          full_name:
+            (p.name as string | undefined) ??
+            ([p.first_name, p.last_name].filter(Boolean).join(' ').trim() || null),
+          title: p.title ?? undefined,
+          email: p.email ?? undefined,
+          linkedin_url: p.linkedin_url ?? undefined,
+          seniority: p.seniority ?? undefined,
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // GET /api/drafts/:id — One draft record, joined with recipient (POC + company)
   // so the UI can render a Gmail-style "From / To / Subject" header without
   // separate roundtrips to persons/companies.
