@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 
 import { endpoints } from "@/api/endpoints";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -30,9 +31,7 @@ export function CampaignTimeline({ campaignId }: { campaignId: string }) {
   }
   if (isError) {
     return (
-      <div className="text-sm text-red-600">
-        Failed to load trace events.
-      </div>
+      <div className="text-sm text-red-600">Failed to load trace events.</div>
     );
   }
   if (!data || data.length === 0) {
@@ -46,8 +45,14 @@ export function CampaignTimeline({ campaignId }: { campaignId: string }) {
 
   return (
     <ol className="relative border-l border-black/10 ml-2 space-y-5">
-      {data.map((e) => (
-        <li key={e.id} className="ml-6">
+      {data.map((e, i) => (
+        <motion.li
+          key={e.id}
+          className="ml-6"
+          initial={{ opacity: 0, x: -6 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: Math.min(i * 0.03, 0.5), duration: 0.25 }}
+        >
           <span
             className={cn(
               "absolute -left-1.5 mt-1.5 size-3 rounded-full border-2 border-white",
@@ -65,7 +70,7 @@ export function CampaignTimeline({ campaignId }: { campaignId: string }) {
             <Badge variant={PHASE_BADGE[e.phase]}>{e.phase}</Badge>
             <span className="text-xs text-black/40">{e.service}</span>
             {e.duration_ms != null && (
-              <span className="text-xs text-black/40">
+              <span className="text-xs text-black/40 tabular-nums">
                 {e.duration_ms} ms
               </span>
             )}
@@ -78,7 +83,7 @@ export function CampaignTimeline({ campaignId }: { campaignId: string }) {
               <code>{e.error_type}</code>: {e.error_message}
             </div>
           )}
-        </li>
+        </motion.li>
       ))}
     </ol>
   );
