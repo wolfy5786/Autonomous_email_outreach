@@ -16,6 +16,7 @@ export interface ICampaign extends Document {
   status: CampaignStatus;
   config: CampaignConfig;
   pipeline_state: PipelineState;
+  rerun: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -84,6 +85,7 @@ const CampaignSchema = new Schema(
       },
     },
     pipeline_state: { type: PipelineStateSchema, default: () => ({}) },
+    rerun: { type: Boolean, default: false },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },

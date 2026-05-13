@@ -146,6 +146,23 @@ export function createCampaignRouter(
     }
   });
 
+  // POST /api/campaigns/:id/rerun — Restart a completed or failed campaign from scratch
+  router.post('/:id/rerun', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = String(req.params.id);
+      const campaign = await pipelineService.rerunCampaign(id);
+      res.status(202).json(campaign);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('not found')) {
+        next(new AppError(404, err.message));
+      } else if (err instanceof Error && err.message.includes('rerun is only valid')) {
+        next(new AppError(400, err.message));
+      } else {
+        next(err);
+      }
+    }
+  });
+
   // DELETE /api/campaigns/:id — Cancel and archive a campaign
   router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -159,6 +176,30 @@ export function createCampaignRouter(
       if (!campaign) throw new AppError(404, 'Campaign not found');
       await statusRepo.setStatus(id, 'cancelled');
       res.json({ message: 'Campaign cancelled', campaign_id: id, status: 'cancelled' });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // DELETE /api/campaigns/:id/purge — Hard-delete a campaign and all associated data
+  router.delete('/:id/purge', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { EmailDraft } = await import('../../shared/models');
+      const id = String(req.params.id);
+
+      const [campaign, draftsResult, pgDeleted] = await Promise.all([
+        Campaign.findOneAndDelete({ campaign_id: id }),
+        EmailDraft.deleteMany({ campaign_id: id }),
+        statusRepo.delete(id),
+      ]);
+
+      if (!campaign && !pgDeleted) throw new AppError(404, 'Campaign not found');
+
+      res.json({
+        message: 'Campaign permanently deleted',
+        campaign_id: id,
+        drafts_deleted: draftsResult.deletedCount,
+      });
     } catch (err) {
       next(err);
     }

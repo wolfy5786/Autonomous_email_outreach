@@ -92,6 +92,7 @@ export class PipelineService {
       product_profile: payload.product_profile,
       config: payload.config,
       status: 'planning',
+      rerun: false,
       pipeline_state: {
         current_stage: 'planning',
         stage_timestamps: {
@@ -115,6 +116,45 @@ export class PipelineService {
     return campaign;
   }
 
+  async rerunCampaign(campaignId: string): Promise<ICampaign> {
+    const campaign = await Campaign.findOne({ campaign_id: campaignId });
+    if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
+
+    if (campaign.status !== 'completed' && campaign.status !== 'failed') {
+      throw new Error(`rerun is only valid for completed or failed campaigns (current: ${campaign.status})`);
+    }
+
+    campaign.status = 'planning';
+    campaign.plan_id = null;
+    campaign.rerun = true;
+    campaign.pipeline_state = {
+      current_stage: 'planning',
+      plan_id: null,
+      sourced_entity_ids: [],
+      ranked_prospect_ids: [],
+      ranked_prospect_scores: {},
+      messaging_target_ids: [],
+      draft_ids: [],
+      sent_draft_ids: [],
+      failed_draft_ids: [],
+      stage_timestamps: { planning: new Date().toISOString() },
+    } as unknown as typeof campaign.pipeline_state;
+    await campaign.save();
+
+    await this.statusRepo.insert({
+      campaign_id: campaignId,
+      status: 'planning',
+      current_stage: 'planning',
+      plan_id: null,
+    });
+    await this.statusRepo.setLastError(campaignId, null);
+
+    await this.broker.publish('plan.requested', { campaign_id: campaignId });
+    console.log(`[PipelineService] Campaign ${campaignId} rerun → plan.requested`);
+
+    return campaign;
+  }
+
   // ── Stage Handlers ───────────────────────────────────────────
 
   private async onPlanReady(payload: PlanReadyPayload): Promise<void> {
@@ -128,11 +168,16 @@ export class PipelineService {
     campaign.pipeline_state.plan_id = plan_id;
     await this.advanceStage(campaign, 'sourcing');
 
+    if (campaign.rerun) {
+      console.log(`[PipelineService] Campaign ${campaign_id} is a rerun — planning data cached, sourcing will use cached data`);
+    }
+
     // Target entities would come from the plan; using campaign_id as placeholder.
     await this.broker.publish('sourcing.requested', {
       campaign_id,
       plan_id,
       target_entities: [], // populated from plan document in real flow
+      rerun: campaign.rerun,
     });
   }
 

@@ -61,6 +61,7 @@ class CompanyRecord(Document):
     freshness_timestamp: datetime
     scrape_mode_last: ScrapeMode = ScrapeMode.ALL
     campaign_ids: list[str] = Field(default_factory=list)
+    enriched: bool = False
     extra: dict[str, Any] = Field(default_factory=dict)
 
     # Option A: sidecar map keyed by attribute name (core or extra key)

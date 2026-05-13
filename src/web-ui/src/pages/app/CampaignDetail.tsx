@@ -1,9 +1,19 @@
-import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
 
 import { endpoints } from "@/api/endpoints";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tabs,
@@ -21,6 +31,9 @@ import { CampaignTimeline } from "@/components/app/CampaignTimeline";
 
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const campaignQuery = useQuery({
     queryKey: ["campaign", id],
@@ -40,10 +53,27 @@ export default function CampaignDetail() {
     enabled: !!id,
   });
 
+<<<<<<< Updated upstream
   const prospectsQuery = useQuery({
     queryKey: ["campaign-prospects", id],
     queryFn: () => endpoints.listCampaignProspects(id!),
     enabled: !!id,
+=======
+  const rerun = useMutation({
+    mutationFn: () => endpoints.rerunCampaign(id!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaign", id] });
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+  });
+
+  const purge = useMutation({
+    mutationFn: () => endpoints.purgeCampaign(id!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      navigate("/app/campaigns");
+    },
+>>>>>>> Stashed changes
   });
 
   if (campaignQuery.isLoading) {
@@ -88,9 +118,45 @@ export default function CampaignDetail() {
             </h1>
             <p className="mt-1 text-sm text-black/50 font-mono">{c.id}</p>
           </div>
-          <Badge variant={campaignStatusVariant(c.status)}>
-            {campaignStatusLabel(c.status)}
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant={campaignStatusVariant(c.status)}>
+              {campaignStatusLabel(c.status)}
+            </Badge>
+            {(c.status === "completed" || c.status === "failed") && (
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={rerun.isPending}
+                  onClick={() => rerun.mutate()}
+                >
+                  <RefreshCw className="size-3.5 mr-1.5" />
+                  {rerun.isPending ? "Rerunning…" : "Rerun"}
+                </Button>
+                {rerun.isError && (
+                  <p className="text-xs text-red-600">
+                    {(rerun.error as Error).message}
+                  </p>
+                )}
+              </div>
+            )}
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={purge.isPending}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="size-3.5 mr-1.5" />
+                Delete
+              </Button>
+              {purge.isError && (
+                <p className="text-xs text-red-600">
+                  {(purge.error as Error).message}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -211,6 +277,34 @@ export default function CampaignDetail() {
           <CampaignTimeline campaignId={c.id} />
         </TabsContent>
       </Tabs>
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete campaign?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete <strong>{c.name}</strong> and all
+              associated drafts. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDelete(false)}
+              disabled={purge.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={purge.isPending}
+              onClick={() => purge.mutate()}
+            >
+              {purge.isPending ? "Deleting…" : "Delete permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

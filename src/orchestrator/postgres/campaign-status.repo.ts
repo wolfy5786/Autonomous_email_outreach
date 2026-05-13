@@ -127,4 +127,12 @@ export class CampaignStatusRepository {
     for (const r of rows) out[r.status] = parseInt(r.count, 10);
     return out;
   }
+
+  async delete(campaign_id: string): Promise<boolean> {
+    const { rowCount } = await this.pg.query(
+      `DELETE FROM campaign_status WHERE campaign_id = $1`,
+      [campaign_id]
+    );
+    return (rowCount ?? 0) > 0;
+  }
 }

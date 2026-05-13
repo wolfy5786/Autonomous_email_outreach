@@ -52,6 +52,19 @@ export const endpoints = {
     return raw as Campaign;
   },
 
+  rerunCampaign: async (id: string) => {
+    const raw = await api.post<unknown>(`/api/campaigns/${id}/rerun`, {});
+    if (isPlainObject(raw)) {
+      return normalizeCampaignFromMongoDoc(raw);
+    }
+    return raw as Campaign;
+  },
+
+  purgeCampaign: (id: string) =>
+    api.delete<{ message: string; campaign_id: string; drafts_deleted: number }>(
+      `/api/campaigns/${id}/purge`
+    ),
+
   // Companies
   listCampaignCompanies: (campaignId: string) =>
     api.get<CompanyDetail[]>(`/api/campaigns/${campaignId}/companies`),

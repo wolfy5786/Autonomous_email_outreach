@@ -76,6 +76,7 @@ class SourcingRequestedJob(BaseModel):
     request_id: str | None = None
     config: SourcingJobConfig | None = None
     seeds: SourcingJobSeeds | None = None
+    rerun: bool = False
 
 
 class SourcingPipeline:
@@ -178,6 +179,23 @@ class SourcingPipeline:
             len(source_map),
             sorted({r.attribute for r in source_map}),
         )
+
+        if job.rerun:
+            logger.info(
+                "stage=data_cached reason=rerun campaign_id=%s plan_id=%s"
+                " — skipping discovery and enrichment, using cached companies",
+                job.campaign_id,
+                job.plan_id,
+            )
+            companies_for_enrichment = self._merge_companies_for_enrichment(disc_cache, src_cache)
+            logger.info(
+                "stage=pipeline_slice_completed reason=rerun campaign_id=%s plan_id=%s request_id=%s",
+                job.campaign_id,
+                job.plan_id,
+                job.request_id,
+            )
+            await self._publish_completed(job, [], companies_for_enrichment)
+            return
 
         raw_candidates = await self._run_discovery(job, plan)
         accepted, _rejected = await self._validate_candidates_stage(raw_candidates, plan)
@@ -613,6 +631,7 @@ class SourcingPipeline:
             for key, prov in result.provenance.items():
                 company.provenance[key] = prov
 
+        company.enriched = True
         company.freshness_timestamp = datetime.now(timezone.utc)
 
         try:
