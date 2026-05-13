@@ -125,9 +125,14 @@ class ProspectingWorker:
         company_docs = self._mongo.get_companies(company_ids)
         companies: list[dict[str, Any]] = []
         company_validation_errors = 0
+        skipped_not_enriched = 0
         for doc in company_docs:
             try:
-                companies.append(CompanyDocument.model_validate(doc).model_dump(mode="python"))
+                validated = CompanyDocument.model_validate(doc)
+                if not validated.enriched:
+                    skipped_not_enriched += 1
+                    continue
+                companies.append(validated.model_dump(mode="python"))
             except ValidationError:
                 company_validation_errors += 1
 
@@ -139,6 +144,7 @@ class ProspectingWorker:
             found_count=len(company_docs),
             missing_count=max(0, len(company_ids) - len(company_docs)),
             company_validation_errors=company_validation_errors,
+            skipped_not_enriched=skipped_not_enriched,
         )
 
         if not companies:

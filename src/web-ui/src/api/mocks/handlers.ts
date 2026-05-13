@@ -19,6 +19,7 @@ import { seed } from "./seed";
 const url = (path: string) => path;
 
 const draftMutations = new Map<string, Partial<Draft>>();
+const campaignMutations = new Map<string, Partial<Campaign>>();
 const newCampaigns: Campaign[] = [];
 
 export const handlers = [
@@ -33,7 +34,24 @@ export const handlers = [
       newCampaigns.find((c) => c.id === id) ??
       seed.campaigns.find((c) => c.id === id);
     if (!found) return HttpResponse.json({ detail: "not found" }, { status: 404 });
-    return HttpResponse.json(found);
+    return HttpResponse.json({ ...found, ...(campaignMutations.get(id) ?? {}) });
+  }),
+
+  http.post(url("/api/campaigns/:id/rerun"), ({ params }) => {
+    const id = params.id as string;
+    const found =
+      newCampaigns.find((c) => c.id === id) ??
+      seed.campaigns.find((c) => c.id === id);
+    if (!found) return HttpResponse.json({ detail: "not found" }, { status: 404 });
+    const current = { ...found, ...(campaignMutations.get(id) ?? {}) };
+    if (current.status !== "completed" && current.status !== "failed") {
+      return HttpResponse.json(
+        { detail: `rerun is only valid for completed or failed campaigns (current: ${current.status})` },
+        { status: 400 },
+      );
+    }
+    campaignMutations.set(id, { ...(campaignMutations.get(id) ?? {}), status: "planning" });
+    return HttpResponse.json({ ...current, status: "planning" }, { status: 202 });
   }),
 
   http.post(url("/api/campaigns"), async ({ request }) => {

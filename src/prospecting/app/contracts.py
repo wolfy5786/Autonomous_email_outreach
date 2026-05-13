@@ -65,6 +65,7 @@ class CompanyDocument(ProspectingDocumentBase):
     linkedin_url: str | None = None
     website_url: str | None = None
     icp_fit_score: float | None = None
+    enriched: bool = False
 
 
 class PersonDocument(ProspectingDocumentBase):

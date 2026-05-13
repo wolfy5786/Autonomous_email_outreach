@@ -73,6 +73,27 @@ export const campaigns: Campaign[] = [
     },
     counts: { companies: 6, pocs: 0, drafts: 0 },
   },
+  {
+    id: "c-finops-004",
+    name: "FinOps Platform — Series B outreach",
+    status: "completed",
+    created_at: "2026-05-08T10:00:00Z",
+    plan_id: "p-finops-004",
+    icp: {
+      industry: "Cloud infrastructure",
+      employee_range: [100, 2000],
+      stack_includes: ["AWS", "Terraform"],
+      geography: ["US"],
+      pain: "Uncontrolled cloud spend with no per-team attribution",
+    },
+    product_profile: {
+      name: "FinOps Platform",
+      value_prop: "Per-team cloud cost attribution with automated showback in under a day.",
+      pricing: "per-seat",
+      differentiators: ["no-code setup", "Terraform-native", "real-time alerts"],
+    },
+    counts: { companies: 31, pocs: 58, drafts: 44 },
+  },
 ];
 
 const companiesByCampaign: Record<string, CompanyDetail[]> = {
@@ -166,6 +187,7 @@ const companiesByCampaign: Record<string, CompanyDetail[]> = {
     },
   ],
   "c-edge-003": [],
+  "c-finops-004": [],
 };
 
 const draftsByCampaign: Record<string, Draft[]> = {
@@ -283,6 +305,7 @@ I'd love to send the case study we did with the Mayo neurology group either way.
     },
   ],
   "c-edge-003": [],
+  "c-finops-004": [],
 };
 
 const timelinesByCampaign: Record<string, TraceEvent[]> = {
@@ -353,6 +376,7 @@ const timelinesByCampaign: Record<string, TraceEvent[]> = {
   ],
   "c-bio-002": [],
   "c-edge-003": [],
+  "c-finops-004": [],
 };
 
 function makeEvent(opts: {

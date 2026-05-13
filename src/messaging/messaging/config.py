@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     draft_failed_queue: str = "draft.failed"
 
     # LLM
-    llm_model: str = "gemini/gemini-1.5-pro"
+    llm_model: str = "gemini-2.5-flash"
     llm_temperature: float = 0.4
     llm_max_tokens: int = 1024
     llm_timeout_seconds: int = 60
