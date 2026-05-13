@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     enrichment_llm_max_retries: int = 3
     # Hard cap on the page-markdown chunk passed to the LLM.
     enrichment_llm_max_chars: int = 20000
+    # Max companies enriched per pipeline run.
+    enrichment_max_per_run: int = 30
 
 
 settings = Settings()

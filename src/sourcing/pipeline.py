@@ -520,6 +520,18 @@ class SourcingPipeline:
             )
             return
 
+        from config import settings as _settings
+
+        cap = _settings.enrichment_max_per_run
+        if len(companies) > cap:
+            logger.warning(
+                "stage=enrichment_capped campaign_id=%s total=%s cap=%s",
+                job.campaign_id,
+                len(companies),
+                cap,
+            )
+            companies = companies[:cap]
+
         logger.info(
             "stage=enrichment_start campaign_id=%s companies=%s operations=%s",
             job.campaign_id,

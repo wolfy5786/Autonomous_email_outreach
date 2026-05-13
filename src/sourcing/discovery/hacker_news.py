@@ -1,9 +1,8 @@
-"""Hacker News — Tier B signal source (SW only).
+"""Hacker News — Tier A discovery source (SW only).
 
-Pulls recent ``Show HN`` stories via the public Algolia HN search API. Output is a
-hint feed: minimal ``(name, url, story_id, domain)`` dicts that must be cross-checked
-against a Tier A directory before any enrichment runs (per data_sourcing_map.md §
-"Tier B signal sources" and source_map.py CATALOG).
+Pulls recent ``Show HN`` stories via the public Algolia HN search API. Candidates
+are emitted as first-class domain records and proceed directly to enrichment without
+requiring a cross-check against another Tier A directory.
 """
 
 from __future__ import annotations
@@ -36,12 +35,11 @@ class HackerNewsDiscovery(DiscoverySource):
     """
     Algolia HN search → ``Show HN`` candidates from the last ``LOOKBACK_DAYS`` days.
 
-    Tier B: emits hints only (``HINT_FEED`` per source_map.py); validation must
-    cross-check against Tier A directories before enrichment.
+    Tier A: candidates are accepted as first-class company records and enriched directly.
     """
 
     source_name = "hacker_news"
-    tier = "B"
+    tier = "A"
     verticals = ["SW"]
 
     async def discover(self, ctx: DiscoveryContext) -> DiscoveryResult:

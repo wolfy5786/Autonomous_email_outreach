@@ -138,15 +138,15 @@ def _catalog() -> list[AttributeSourceMapRule]:
             priority=3,
             verticals=["SW"],
         ),
-        # --- Hacker News (hint feed / Tier B) ---
+        # --- Hacker News (Tier A) ---
         AttributeSourceMapRule(
-            attribute="candidate_hint",
-            source_type=SourceType.HINT_FEED,
+            attribute="domain",
+            source_type=SourceType.API,
             source_name="hacker_news",
             allowed_for_discovery=True,
-            allowed_for_enrichment=False,
-            confidence_weight=0.45,
-            priority=5,
+            allowed_for_enrichment=True,
+            confidence_weight=0.70,
+            priority=3,
             fallback_sources=[],
             verticals=["SW"],
         ),

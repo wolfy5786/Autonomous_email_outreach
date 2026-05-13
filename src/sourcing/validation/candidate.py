@@ -131,19 +131,19 @@ if __name__ == "__main__":
         "name": "Acme",
         "domain": "https://acme.com/launch",
         "_discovery_source": "hacker_news",
-        "_discovery_tier": "B",
+        "_discovery_tier": "A",
     }
     hn_orphan = {
         "name": "Charlie",
         "domain": "charlie.app",
         "_discovery_source": "hacker_news",
-        "_discovery_tier": "B",
+        "_discovery_tier": "A",
     }
     bad_local = {
         "name": "Local",
         "domain": "localhost",
         "_discovery_source": "hacker_news",
-        "_discovery_tier": "B",
+        "_discovery_tier": "A",
     }
     bad_ip = {
         "name": "IP",

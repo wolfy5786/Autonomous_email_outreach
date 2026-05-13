@@ -259,22 +259,9 @@ def _candidate_matches_filters(
         if not (cand_tags & want):
             return False
 
-    if filters.regions:
-        want = _norm_set(filters.regions)
-        hq = candidate.get("headquarters") or {}
-        region_hits: set[str] = set()
-        for key in ("country", "city"):
-            n = _norm(hq.get(key) if isinstance(hq, dict) else None)
-            if n:
-                region_hits.add(n)
-        raw_regions = raw.get("regions")
-        if isinstance(raw_regions, list):
-            for r in raw_regions:
-                n = _norm(r)
-                if n:
-                    region_hits.add(n)
-        if not (region_hits & want):
-            return False
+    # TODO(regions): not enforced yet — YC API stores "United States of America" / "USA"
+    # which won't match shorthand like "US". Needs a country-code alias map before enabling.
+    # if filters.regions: ...
 
     if filters.is_hiring is not None and "isHiring" in raw:
         # Best-effort: only enforce when the field is present on the YC payload;
