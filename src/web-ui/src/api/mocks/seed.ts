@@ -106,6 +106,36 @@ const companiesByCampaign: Record<string, CompanyDetail[]> = {
       employee_count: 8000,
       hq: { city: "South San Francisco", region: "CA", country: "US" },
       last_scrape_mode: "all",
+      funding_stage: "series_h",
+      tech_stack: ["Ruby", "Go", "Kubernetes", "React"],
+      description:
+        "Stripe builds economic infrastructure for the internet. Its APIs handle payments, billing, and treasury for businesses of every size.",
+      linkedin_url: "https://linkedin.com/company/stripe",
+      website_url: "https://stripe.com",
+      icp_fit_score: 0.87,
+      data_completeness: 0.92,
+      freshness_timestamp: "2026-05-12T14:30:00Z",
+      campaign_ids: ["c-acme-001"],
+      enriched: true,
+      provenance: {
+        domain: {
+          source_name: "yc_directory",
+          source_type: "directory",
+          confidence: 0.95,
+          extracted_at: "2026-05-12T14:30:00Z",
+        },
+        employee_count: {
+          source_name: "linkedin_company_page",
+          source_type: "linkedin",
+          confidence: 0.78,
+          extracted_at: "2026-05-12T14:30:00Z",
+        },
+      },
+      extra: {
+        yc_batch: "S09",
+        product_hunt_upvotes: 1240,
+        github_org: "stripe",
+      },
       pocs: [
         {
           id: "p-stripe-maya",

@@ -1,6 +1,12 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Building2, ExternalLink, Mail } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  ExternalLink,
+  Linkedin,
+  Mail,
+} from "lucide-react";
 
 import { endpoints } from "@/api/endpoints";
 import { Badge } from "@/components/ui/badge";
@@ -93,7 +99,121 @@ export default function CompanyDetail() {
                 : undefined
           }
         />
+        <Fact
+          label="Funding stage"
+          value={company.funding_stage ?? "—"}
+        />
+        <Fact
+          label="ICP fit score"
+          value={formatScore(company.icp_fit_score)}
+        />
+        <Fact
+          label="Data completeness"
+          value={formatPercent(company.data_completeness)}
+        />
+        <Fact
+          label="Enriched"
+          value={
+            company.enriched === undefined
+              ? "—"
+              : company.enriched
+                ? "yes"
+                : "no"
+          }
+          variant={company.enriched ? "success" : undefined}
+        />
       </div>
+
+      {/* Description */}
+      {company.description && (
+        <div>
+          <h2 className="text-sm uppercase tracking-wide text-black/40 mb-2">
+            Description
+          </h2>
+          <p className="text-sm leading-relaxed text-black/80 whitespace-pre-line">
+            {company.description}
+          </p>
+        </div>
+      )}
+
+      {/* Tech stack */}
+      {company.tech_stack && company.tech_stack.length > 0 && (
+        <div>
+          <h2 className="text-sm uppercase tracking-wide text-black/40 mb-3">
+            Tech stack
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {company.tech_stack.map((tech) => (
+              <Badge key={tech} variant="outline">
+                {tech}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Links + freshness */}
+      {(company.linkedin_url ||
+        company.website_url ||
+        company.freshness_timestamp) && (
+        <div>
+          <h2 className="text-sm uppercase tracking-wide text-black/40 mb-3">
+            Links
+          </h2>
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            {company.website_url && (
+              <a
+                href={company.website_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-black/70 hover:text-black"
+              >
+                <ExternalLink className="size-3" />
+                Website
+              </a>
+            )}
+            {company.linkedin_url && (
+              <a
+                href={company.linkedin_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-black/70 hover:text-black"
+              >
+                <Linkedin className="size-3" />
+                LinkedIn
+              </a>
+            )}
+            {company.freshness_timestamp && (
+              <span className="text-black/50">
+                Last refreshed{" "}
+                {new Date(company.freshness_timestamp).toLocaleString()}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Campaigns */}
+      {company.campaign_ids && company.campaign_ids.length > 0 && (
+        <div>
+          <h2 className="text-sm uppercase tracking-wide text-black/40 mb-3">
+            Campaigns ({company.campaign_ids.length})
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {company.campaign_ids.map((cid) => (
+              <Link
+                key={cid}
+                to={`/app/campaigns/${cid}`}
+                className="inline-flex items-center"
+              >
+                <Badge variant="outline" className="hover:bg-black/5">
+                  {cid}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* POCs */}
       <div>
@@ -153,7 +273,72 @@ export default function CompanyDetail() {
           </div>
         )}
       </div>
+
+      {/* Raw fields — free-form Mongo dicts kept as collapsible JSON */}
+      {(hasEntries(company.provenance) || hasEntries(company.extra)) && (
+        <div>
+          <h2 className="text-sm uppercase tracking-wide text-black/40 mb-3">
+            Raw fields
+          </h2>
+          <div className="space-y-3">
+            {hasEntries(company.provenance) && (
+              <RawJsonBlock
+                label="provenance"
+                value={company.provenance as Record<string, unknown>}
+              />
+            )}
+            {hasEntries(company.extra) && (
+              <RawJsonBlock
+                label="extra"
+                value={company.extra as Record<string, unknown>}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function formatScore(v: number | undefined): string {
+  if (typeof v !== "number" || Number.isNaN(v)) return "—";
+  return v.toFixed(2);
+}
+
+function formatPercent(v: number | undefined): string {
+  if (typeof v !== "number" || Number.isNaN(v)) return "—";
+  return `${Math.round(v * 100)}%`;
+}
+
+function hasEntries(v: unknown): boolean {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.keys(v).length > 0
+  );
+}
+
+function RawJsonBlock({
+  label,
+  value,
+}: {
+  label: string;
+  value: Record<string, unknown>;
+}) {
+  return (
+    <details className="rounded-lg border border-black/10 bg-white">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-black/70 hover:bg-black/[0.02]">
+        {label}{" "}
+        <span className="text-black/40 font-normal">
+          ({Object.keys(value).length}{" "}
+          {Object.keys(value).length === 1 ? "key" : "keys"})
+        </span>
+      </summary>
+      <pre className="px-4 pb-4 overflow-x-auto text-xs leading-relaxed text-black/70">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </details>
   );
 }
 

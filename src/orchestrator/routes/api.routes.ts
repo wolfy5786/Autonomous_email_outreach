@@ -287,6 +287,19 @@ export function createApiRouter(statusRepo: CampaignStatusRepository): Router {
             }
           : undefined,
         last_scrape_mode: c.scrape_mode_last ?? undefined,
+        funding_stage: c.funding_stage ?? undefined,
+        tech_stack: Array.isArray(c.tech_stack) ? c.tech_stack : undefined,
+        description: c.description ?? undefined,
+        linkedin_url: c.linkedin_url ?? undefined,
+        website_url: c.website_url ?? undefined,
+        icp_fit_score:
+          typeof c.icp_fit_score === 'number' ? c.icp_fit_score : undefined,
+        data_completeness:
+          typeof c.data_completeness === 'number' ? c.data_completeness : undefined,
+        freshness_timestamp: c.freshness_timestamp ?? undefined,
+        campaign_ids: Array.isArray(c.campaign_ids) ? c.campaign_ids : undefined,
+        enriched: typeof c.enriched === 'boolean' ? c.enriched : undefined,
+        provenance: c.provenance ?? undefined,
         extra: c.extra ?? undefined,
         pocs: persons.map((p) => ({
           id: String(p._id),

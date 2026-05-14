@@ -74,6 +74,22 @@ export interface Company {
   hq?: Headquarters;
   /** Last sourcing scrape mode applied to this record. */
   last_scrape_mode?: "all" | "partial" | "none";
+
+  // Mirrors CompanyRecord in src/shared/models/company.py.
+  funding_stage?: string;
+  tech_stack?: string[];
+  description?: string;
+  linkedin_url?: string;
+  website_url?: string;
+  icp_fit_score?: number;
+  data_completeness?: number;
+  /** ISO 8601 timestamp of the most recent enrichment pass. */
+  freshness_timestamp?: string;
+  campaign_ids?: string[];
+  enriched?: boolean;
+  /** Per-attribute provenance sidecar (AttributeProvenance). Free-form. */
+  provenance?: Record<string, unknown>;
+
   /** Source-system identifiers and free-form attributes. */
   extra?: Record<string, unknown>;
 }
