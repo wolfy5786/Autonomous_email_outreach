@@ -274,6 +274,50 @@ export function createApiRouter(statusRepo: CampaignStatusRepository): Router {
         .collection('persons')
         .find({ company_id: companyId })
         .toArray();
+
+      // Map the canonical persons-collection rows first.
+      let pocsOut = persons.map((p) => ({
+        id: String(p._id),
+        company_id: String(p.company_id),
+        full_name:
+          (p.name as string | undefined) ??
+          ([p.first_name, p.last_name].filter(Boolean).join(' ').trim() || null),
+        title: p.title ?? undefined,
+        email: p.email ?? undefined,
+        linkedin_url: p.linkedin_url ?? undefined,
+        seniority: p.seniority ?? undefined,
+      }));
+
+      // Fallback: sourcing's LinkedIn POC op sometimes writes only to
+      // companies.extra (poc_name / poc_title / poc_profile_url) without
+      // upserting into the `persons` collection. Surface that POC so the
+      // detail page isn't blank for the ~96% of records in this state.
+      const extra = (c.extra ?? {}) as Record<string, unknown>;
+      if (
+        pocsOut.length === 0 &&
+        typeof extra.poc_name === 'string' &&
+        extra.poc_name.trim()
+      ) {
+        pocsOut = [
+          {
+            id: `extra-poc:${String(c._id)}`,
+            company_id: String(c._id),
+            full_name: extra.poc_name.trim(),
+            title:
+              typeof extra.poc_title === 'string' && extra.poc_title.trim()
+                ? extra.poc_title
+                : undefined,
+            email: undefined,
+            linkedin_url:
+              typeof extra.poc_profile_url === 'string' &&
+              extra.poc_profile_url.trim()
+                ? extra.poc_profile_url
+                : undefined,
+            seniority: undefined,
+          },
+        ];
+      }
+
       res.json({
         id: String(c._id),
         name: c.name ?? null,
@@ -301,17 +345,7 @@ export function createApiRouter(statusRepo: CampaignStatusRepository): Router {
         enriched: typeof c.enriched === 'boolean' ? c.enriched : undefined,
         provenance: c.provenance ?? undefined,
         extra: c.extra ?? undefined,
-        pocs: persons.map((p) => ({
-          id: String(p._id),
-          company_id: String(p.company_id),
-          full_name:
-            (p.name as string | undefined) ??
-            ([p.first_name, p.last_name].filter(Boolean).join(' ').trim() || null),
-          title: p.title ?? undefined,
-          email: p.email ?? undefined,
-          linkedin_url: p.linkedin_url ?? undefined,
-          seniority: p.seniority ?? undefined,
-        })),
+        pocs: pocsOut,
       });
     } catch (err) {
       next(err);
