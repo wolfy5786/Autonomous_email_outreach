@@ -1,0 +1,70 @@
+# Replace YOUR_ACCOUNT_ID with your AWS account ID (get it via: aws sts get-caller-identity --query Account --output text)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: email-outreach
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:y
+      labels:
+        app: orchestrator
+        monitor: "true"
+    spec:
+      containers:
+        - name: orchestrator
+          image: 561517126105.dkr.ecr.us-west-2.amazonaws.com/orchestrator:latest
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: PORT
+              value: "3000"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: MONGO_URI
+              value: "mongodb://mongo:27017/email_outreach"
+            - name: RABBITMQ_URL
+              value: "amqp://guest:guest@rabbitmq:5672/"
+            - name: RABBITMQ_EXCHANGE
+              value: "email_outreach.events"
+            - name: RETRY_LIMIT
+              value: "3"
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  namespace: email-outreach
+  labels:
+    monitor: "true"
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http

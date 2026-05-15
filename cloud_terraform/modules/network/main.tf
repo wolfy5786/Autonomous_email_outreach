@@ -9,7 +9,7 @@ resource "aws_vpc" "main" {
   tags = { Name = "email-outreach-${var.environment}" }
 }
 
-# Public subnets (NLB + NAT GW)
+# Public subnets (NLB + NAT GW) — tagged for EKS external load balancers
 resource "aws_subnet" "public" {
   count                   = 2
   vpc_id                  = aws_vpc.main.id
@@ -17,17 +17,23 @@ resource "aws_subnet" "public" {
   availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
 
-  tags = { Name = "email-outreach-public-${count.index}" }
+  tags = {
+    Name                     = "email-outreach-public-${count.index}"
+    "kubernetes.io/role/elb" = "1"
+  }
 }
 
-# Private subnets (EKS workers + pods)
+# Private subnets (EKS workers + pods) — tagged for EKS internal load balancers
 resource "aws_subnet" "private" {
   count             = 2
   vpc_id            = aws_vpc.main.id
   cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index + 10)
   availability_zone = data.aws_availability_zones.available.names[count.index]
 
-  tags = { Name = "email-outreach-private-${count.index}" }
+  tags = {
+    Name                              = "email-outreach-private-${count.index}"
+    "kubernetes.io/role/internal-elb" = "1"
+  }
 }
 
 resource "aws_internet_gateway" "main" {
@@ -42,6 +48,39 @@ resource "aws_eip" "nat" {
 resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public[0].id
+  depends_on    = [aws_internet_gateway.main]
+}
+
+# Route table: public subnets → IGW
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+  tags = { Name = "email-outreach-public-rt" }
+}
+
+resource "aws_route_table_association" "public" {
+  count          = 2
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+# Route table: private subnets → NAT GW
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.main.id
+  }
+  tags = { Name = "email-outreach-private-rt" }
+}
+
+resource "aws_route_table_association" "private" {
+  count          = 2
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
 }
 
 data "aws_availability_zones" "available" {

@@ -106,6 +106,7 @@ class CompanyContext(BaseModel):
     domain: str
     industry: str | None = None
     description: str | None = None
+    enriched: bool = False
 
 
 class PlanContext(BaseModel):

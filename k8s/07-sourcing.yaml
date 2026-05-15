@@ -1,0 +1,82 @@
+# sourcing runs Playwright + Chromium — needs extra memory and SYS_ADMIN cap for the sandbox.
+# If Chromium crashes with "No usable sandbox!", add env: PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sourcing
+  namespace: email-outreach
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sourcing
+  template:
+    metadata:
+      labels:
+        app: sourcing
+    spec:
+      containers:
+        - name: sourcing
+          image: 561517126105.dkr.ecr.us-west-2.amazonaws.com/sourcing:latest
+          env:
+            - name: RABBITMQ_URL
+              value: "amqp://guest:guest@rabbitmq:5672/"
+            - name: RABBIT_PREFETCH
+              value: "10"
+            - name: EVENTS_EXCHANGE
+              value: "email_outreach.events"
+            - name: SOURCING_COMPLETED_ROUTING_KEY
+              value: "sourcing.completed"
+            - name: PROSPECTING_REQUESTED_ROUTING_KEY
+              value: "prospecting.requested"
+            - name: MONGO_URI
+              value: "mongodb://mongo:27017"
+            - name: MONGO_DB_NAME
+              value: "email_outreach"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: ENRICHMENT_HTTP_TIMEOUT_S
+              value: "30.0"
+            - name: ENRICHMENT_LLM_MODEL
+              value: "gemini/gemini-1.5-pro"
+            - name: ENRICHMENT_LLM_TEMPERATURE
+              value: "0.0"
+            - name: ENRICHMENT_LLM_MAX_TOKENS
+              value: "1024"
+            - name: ENRICHMENT_LLM_TIMEOUT_SECONDS
+              value: "60"
+            - name: ENRICHMENT_LLM_MAX_RETRIES
+              value: "3"
+            - name: ENRICHMENT_LLM_MAX_CHARS
+              value: "20000"
+            - name: PLAYWRIGHT_BROWSERS_PATH
+              value: "/ms-playwright"
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: GEMINI_API_KEY
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: OPENAI_API_KEY
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: SERPAPI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: SERPAPI_API_KEY
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false

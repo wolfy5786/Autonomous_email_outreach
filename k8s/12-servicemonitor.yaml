@@ -1,0 +1,26 @@
+# Tells Prometheus (installed via kube-prometheus-stack Helm chart) to scrape
+# all services in the email-outreach namespace that have label monitor="true".
+# Services with that label: orchestrator, planning, prospecting, messaging, observability.
+#
+# Install Prometheus first:
+#   helm install monitoring prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --create-namespace \
+#     --set grafana.adminPassword=demo-password \
+#     --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: email-outreach
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - email-outreach
+  selector:
+    matchLabels:
+      monitor: "true"
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

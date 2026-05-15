@@ -16,6 +16,7 @@ htmlcov/
 */.env
 .env.*
 !.env.example
+.env.local
 
 # Editor / OS
 .DS_Store
@@ -28,24 +29,16 @@ Thumbs.db
 dist/
 build/
 
-.cursorrules
-# Python
-__pycache__/
-*.pyc
-.pytest_cache/
-*.egg-info/
-dist/
-venv/
-
 # Node
 node_modules/
-dist/
 *.js.map
 
-# IDE
-.vscode/
-.idea/
+.cursorrules
 
-# Environment
-.env
-.env.local
+# Terraform — cloud_terraform (local provider cache + state are large / sensitive)
+cloud_terraform/.terraform/
+cloud_terraform/**/*.tfstate
+cloud_terraform/**/*.tfstate.*
+cloud_terraform/crash.log
+cloud_terraform/crash.*.log
+cloud_terraform/**/*.tfplan

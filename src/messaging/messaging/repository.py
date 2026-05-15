@@ -107,6 +107,11 @@ class MessagingRepository:
         )
         return [HintContext.model_validate(doc) async for doc in cursor]
 
+    async def count_campaign_drafts(self, campaign_id: str) -> int:
+        return await self._db["email_drafts"].count_documents(
+            {"campaign_id": campaign_id, "status": DraftStatus.DRAFT_CREATED.value}
+        )
+
     async def find_existing_draft(
         self, campaign_id: str, poc_id: str
     ) -> EmailDraft | None:

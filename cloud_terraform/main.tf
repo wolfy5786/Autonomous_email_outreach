@@ -23,56 +23,17 @@ module "node_groups" {
   environment  = var.environment
 }
 
-# ── Karpenter Autoscaler ─────────────────────────────────────────
-module "karpenter" {
-  source       = "./modules/karpenter"
-  cluster_name = module.eks.cluster_name
-  oidc_issuer  = module.eks.oidc_issuer
-}
-
 # ── ECR Repositories ─────────────────────────────────────────────
 module "ecr" {
   source   = "./modules/ecr"
   services = var.services
 }
 
-# ── RabbitMQ (optional — Amazon MQ) ──────────────────────────────
-module "rabbitmq" {
-  source      = "./modules/rabbitmq"
-  environment = var.environment
-  vpc_id      = module.network.vpc_id
-  subnet_ids  = module.network.private_subnet_ids
-}
-
-# ── Secrets Manager ──────────────────────────────────────────────
-module "secrets" {
-  source      = "./modules/secrets"
-  environment = var.environment
-}
-
-# ── IAM IRSA Roles ───────────────────────────────────────────────
-module "iam_irsa" {
-  source       = "./modules/iam-irsa"
-  cluster_name = module.eks.cluster_name
-  oidc_issuer  = module.eks.oidc_issuer
-  services     = var.services
-}
-
-# ── S3 Backup Bucket ─────────────────────────────────────────────
-module "s3_backup" {
-  source      = "./modules/s3-backup"
-  environment = var.environment
-}
-
-# ── Observability ─────────────────────────────────────────────────
-module "observability" {
-  source      = "./modules/observability"
-  environment = var.environment
-  cluster_name = var.cluster_name
-}
-
-# ── Route53 (optional) ───────────────────────────────────────────
-module "route53" {
-  source      = "./modules/route53"
-  environment = var.environment
-}
+# ── Disabled for demo (stubs / not needed) ───────────────────────
+# module "karpenter"   { ... }  # auto-scaling — overkill for demo
+# module "rabbitmq"    { ... }  # use in-cluster RabbitMQ instead
+# module "secrets"     { ... }  # use kubectl create secret instead
+# module "iam_irsa"    { ... }  # not needed for demo
+# module "s3_backup"   { ... }  # not needed for demo
+# module "observability" { ... } # install via Helm after cluster is up
+# module "route53"     { ... }  # use LoadBalancer URL instead

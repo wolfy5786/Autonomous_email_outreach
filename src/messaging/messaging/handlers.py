@@ -92,6 +92,13 @@ async def handle_messaging_requested(
     company = await repo.get_company(poc.company_id)
     if company is None:
         raise NonRetryableError(f"company {poc.company_id} not found")
+    if not company.enriched:
+        logger.info("skipping draft — company not enriched", company=company.domain)
+        return
+    draft_count = await repo.count_campaign_drafts(event.campaign_id)
+    if draft_count >= 10:
+        logger.info("skipping draft — campaign draft limit reached", count=draft_count)
+        return
     hints = await repo.top_hints(company.id, event.campaign_id, limit=5)
     logger.info("context loaded", company=company.domain, hints_count=len(hints))
 

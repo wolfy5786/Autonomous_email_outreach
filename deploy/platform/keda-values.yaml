@@ -1,4 +1,0 @@
-# KEDA queue-depth autoscaler
-# See cloud_INFRASTRUCTURE.md § Autoscaling Strategy
-operator:
-  replicaCount: 1

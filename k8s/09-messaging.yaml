@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: messaging
+  namespace: email-outreach
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: messaging
+  template:
+    metadata:
+      labels:
+        app: messaging
+        monitor: "true"
+    spec:
+      containers:
+        - name: messaging
+          image: 561517126105.dkr.ecr.us-west-2.amazonaws.com/messaging:latest
+          ports:
+            - containerPort: 8081
+              name: http
+          env:
+            - name: BROKER_TYPE
+              value: "rabbitmq"
+            - name: RABBITMQ_URL
+              value: "amqp://guest:guest@rabbitmq:5672/"
+            - name: RABBITMQ_EXCHANGE
+              value: "email_outreach.events"
+            - name: RABBIT_PREFETCH
+              value: "5"
+            - name: MONGO_URL
+              value: "mongodb://mongo:27017"
+            - name: MONGO_DB
+              value: "email_outreach"
+            - name: MESSAGING_REQUESTED_QUEUE
+              value: "messaging.requested"
+            - name: DRAFT_WRITTEN_QUEUE
+              value: "draft.written"
+            - name: DRAFT_FAILED_QUEUE
+              value: "draft.failed"
+            - name: LLM_MODEL
+              value: "gemini-2.5-flash"
+            - name: LLM_TEMPERATURE
+              value: "0.4"
+            - name: LLM_MAX_TOKENS
+              value: "1024"
+            - name: LLM_TIMEOUT_SECONDS
+              value: "60"
+            - name: LLM_MAX_RETRIES
+              value: "3"
+            - name: EMAIL_PROVIDER
+              value: "stub"
+            - name: HEALTH_PORT
+              value: "8081"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: GRACEFUL_SHUTDOWN_SECONDS
+              value: "30"
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: GEMINI_API_KEY
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: OPENAI_API_KEY
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: ANTHROPIC_API_KEY
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: messaging
+  namespace: email-outreach
+  labels:
+    monitor: "true"
+spec:
+  selector:
+    app: messaging
+  ports:
+    - port: 8081
+      targetPort: 8081
+      name: http

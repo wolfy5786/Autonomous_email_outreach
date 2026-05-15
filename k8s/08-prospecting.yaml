@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prospecting
+  namespace: email-outreach
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prospecting
+  template:
+    metadata:
+      labels:
+        app: prospecting
+        monitor: "true"
+    spec:
+      containers:
+        - name: prospecting
+          image: 561517126105.dkr.ecr.us-west-2.amazonaws.com/prospecting:latest
+          ports:
+            - containerPort: 8004
+              name: http
+          env:
+            - name: RABBITMQ_URL
+              value: "amqp://guest:guest@rabbitmq:5672/%2F"
+            - name: RABBITMQ_EXCHANGE
+              value: "email_outreach.events"
+            - name: RABBITMQ_PREFETCH
+              value: "10"
+            - name: MONGODB_URI
+              value: "mongodb://mongo:27017"
+            - name: MONGODB_DB
+              value: "email_outreach"
+            - name: WAIT_FOR_DEPS
+              value: "true"
+            - name: STARTUP_RETRIES
+              value: "45"
+            - name: STARTUP_SLEEP_SECONDS
+              value: "2"
+            - name: HTTP_HOST
+              value: "0.0.0.0"
+            - name: HTTP_PORT
+              value: "8004"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DEFAULT_MIN_ICP_SCORE
+              value: "0.0"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prospecting
+  namespace: email-outreach
+  labels:
+    monitor: "true"
+spec:
+  selector:
+    app: prospecting
+  ports:
+    - port: 8004
+      targetPort: 8004
+      name: http

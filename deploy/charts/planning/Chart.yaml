@@ -1,5 +1,0 @@
-apiVersion: v2
-name: planning
-description: Helm chart for the planning service
-version: 0.1.0
-appVersion: "1.0.0"

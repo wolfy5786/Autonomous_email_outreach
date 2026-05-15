@@ -1,4 +1,4 @@
 output "repository_urls" {
-  value = {}
+  value       = { for k, v in aws_ecr_repository.services : k => v.repository_url }
   description = "Map of service name → ECR repo URL"
 }
